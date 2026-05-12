@@ -30,21 +30,27 @@
 
 ## ÉTAT ACTUEL DU PROJET
 
-Phase : Brainstorming / Design
-Avancement : Architecture validée, design en cours (section 2/5)
+Phase 1 — Foundation : TERMINÉE
+Commits poussés sur Noa427/AEVUM (branch: main)
 
 ## DERNIÈRE FEATURE TERMINÉE
 
-Aucune — projet non encore initialisé.
+Phase 1 Foundation complète :
+- Monorepo init (backend Express/TS + frontend Next.js 16 + supabase/migrations)
+- Supabase schema 6 tables (clients, client_configs, pending_tasks, activity_logs, scheduled_jobs, settings)
+- Auth admin (Supabase Auth, login page, middleware getUser())
+- CRUD clients avec configs chiffrées AES-256-GCM
+- Dashboard stats (3 compteurs)
+- Settings mode auto + clé Anthropic (validation live)
+- Sidebar navigation
 
 ## PROCHAINE FEATURE À CODER
 
-Phase 1 — Foundation :
-1. Init monorepo + Git + .gitignore
-2. Backend Express/TS (structure + health check)
-3. Frontend Next.js 14 (structure + layout sidebar)
-4. Supabase schema (migrations SQL)
-5. Auth admin (Supabase Auth)
-6. CRUD clients
-7. Dashboard stats
-8. Settings (toggle mode auto)
+Phase 2 — Pilier "Récupération impayés" :
+1. Endpoint POST /api/webhooks/stripe/:clientId (vérif signature Stripe)
+2. Logique dual mode : manuel → INSERT pending_task / auto → Claude API + Resend
+3. Page /tasks avec drawer tâche manuelle (copier prompt → coller réponse → aperçu → envoyer)
+4. POST /api/tasks/:id/preview (génère aperçu email)
+5. POST /api/tasks/:id/send (Resend, log activity)
+6. Page /history (liste activity_logs)
+7. POST /api/simulate (crée fausse tâche pour test)
