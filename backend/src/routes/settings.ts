@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { supabase } from '../services/supabase'
 import { requireAuth } from '../middleware/auth'
 import Anthropic from '@anthropic-ai/sdk'
+import { encrypt, decrypt } from '../services/encryption'
 
 export const settingsRouter = Router()
 settingsRouter.use(requireAuth)
@@ -30,7 +31,7 @@ settingsRouter.put('/', async (req, res) => {
     } catch {
       return res.status(400).json({ error: 'Clé API Anthropic invalide' })
     }
-    await supabase.from('settings').upsert({ key: 'anthropic_api_key', value: anthropic_api_key })
+    await supabase.from('settings').upsert({ key: 'anthropic_api_key', value: encrypt(anthropic_api_key) })
   }
 
   if (auto_mode !== undefined) {

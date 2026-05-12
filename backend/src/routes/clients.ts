@@ -36,7 +36,11 @@ clientsRouter.post('/', async (req, res) => {
     { client_id: client.id, config_type: 'stripe_webhook_secret', encrypted_value: encrypt(stripe_webhook_secret) },
     { client_id: client.id, config_type: 'sender_name', encrypted_value: encrypt(sender_name) },
   ])
-  if (configError) return res.status(500).json({ error: configError.message })
+  if (configError) {
+    // Rollback: supprimer le client créé pour éviter un enregistrement sans configs
+    await supabase.from('clients').delete().eq('id', client.id)
+    return res.status(500).json({ error: configError.message })
+  }
 
   res.status(201).json(client)
 })
