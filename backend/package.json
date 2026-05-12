@@ -16,6 +16,7 @@
     "@anthropic-ai/sdk": "^0.95.2",
     "@supabase/supabase-js": "^2.105.4",
     "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "resend": "^6.12.3",
     "stripe": "^22.1.1"
