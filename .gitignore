@@ -6,3 +6,9 @@ dist/
 build/
 .DS_Store
 *.log
+.env.production
+.env.development.local
+.env.test.local
+.env.production.local
+Thumbs.db
+coverage/
