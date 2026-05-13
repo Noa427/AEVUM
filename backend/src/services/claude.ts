@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { supabase } from './supabase'
 import { decrypt } from './encryption'
 
-export async function callClaude(prompt: string): Promise<string> {
+export async function callClaude(prompt: string, model: string = 'claude-haiku-4-5-20251001'): Promise<string> {
   const { data } = await supabase
     .from('settings')
     .select('value')
@@ -14,7 +14,7 @@ export async function callClaude(prompt: string): Promise<string> {
   const apiKey = decrypt(data.value)
   const client = new Anthropic({ apiKey })
   const message = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+    model,
     max_tokens: 1024,
     messages: [{ role: 'user', content: prompt }],
   })
