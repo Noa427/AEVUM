@@ -31,9 +31,18 @@ export function buildPrompt(params: {
 
 export function parseClaudeResponse(response: string): { subject: string; body_html: string } {
   const lines = response.trim().split('\n')
-  const subject = lines[0].replace(/^Objet:\s*/i, '').trim()
-  const body_html = lines.slice(2).join('\n').trim()
+  const subjectIdx = lines.findIndex(l => /^Objet:\s*/i.test(l))
+  if (subjectIdx === -1) throw new Error('Format Claude invalide : ligne "Objet:" manquante')
+  const subject = lines[subjectIdx].replace(/^Objet:\s*/i, '').trim()
+  // find first non-empty line after the subject line
+  let bodyStart = subjectIdx + 1
+  while (bodyStart < lines.length && lines[bodyStart].trim() === '') bodyStart++
+  const body_html = lines.slice(bodyStart).join('\n').trim()
   return { subject, body_html }
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 export function wrapEmailHtml(body_html: string, sender_name: string): string {
@@ -43,7 +52,7 @@ export function wrapEmailHtml(body_html: string, sender_name: string): string {
 <body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#333">
   ${body_html}
   <hr style="border:none;border-top:1px solid #eee;margin:30px 0">
-  <p style="font-size:12px;color:#999">Envoyé via AEVUM pour ${sender_name}</p>
+  <p style="font-size:12px;color:#999">Envoyé via AEVUM pour ${escapeHtml(sender_name)}</p>
 </body>
 </html>`
 }
