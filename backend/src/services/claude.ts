@@ -19,6 +19,6 @@ export async function callClaude(prompt: string): Promise<string> {
     messages: [{ role: 'user', content: prompt }],
   })
   const block = message.content[0]
-  if (block.type !== 'text') throw new Error('Réponse Claude inattendue')
+  if (!block || block.type !== 'text') throw new Error('Réponse Claude inattendue')
   return block.text
 }
