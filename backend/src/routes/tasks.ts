@@ -36,7 +36,7 @@ tasksRouter.post('/:id/send', async (req, res) => {
 
   const { data: task, error: taskError } = await supabase
     .from('pending_tasks')
-    .select('*, clients(email)')
+    .select('*, clients(name, email)')
     .eq('id', req.params.id)
     .single()
   if (taskError || !task) return res.status(404).json({ error: 'Tâche introuvable' })
@@ -51,6 +51,7 @@ tasksRouter.post('/:id/send', async (req, res) => {
   const sender_name = configMap['sender_name'] || 'Formateur'
 
   const customer_email = (task.context_json as any).customer_email as string
+  if (!customer_email) return res.status(400).json({ error: 'customer_email manquant dans context' })
   const html = wrapEmailHtml(body_html, sender_name)
 
   try {
