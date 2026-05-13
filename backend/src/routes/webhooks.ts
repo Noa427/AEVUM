@@ -73,6 +73,7 @@ webhooksRouter.post('/:clientId', verifyStripeSignature, async (req, res) => {
     .single()
 
   try {
+    if (!customer_email) throw new Error('customer_email manquant')
     const aiResponse = await callClaude(prompt_template)
     const { subject, body_html } = parseClaudeResponse(aiResponse)
     const html = wrapEmailHtml(body_html, sender_name)
