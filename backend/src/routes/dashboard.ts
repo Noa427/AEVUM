@@ -10,6 +10,10 @@ dashboardRouter.get('/', async (req, res) => {
 
   const clientIds = await getClientIds(userId)
 
+  const startOfMonth = new Date()
+  startOfMonth.setDate(1)
+  startOfMonth.setHours(0, 0, 0, 0)
+
   const [clientsRes, pendingRes, sentRes] = await Promise.all([
     supabase.from('clients').select('id', { count: 'exact', head: true }).eq('user_id', userId),
     supabase.from('pending_tasks').select('id', { count: 'exact', head: true })
@@ -17,7 +21,8 @@ dashboardRouter.get('/', async (req, res) => {
       .eq('status', 'pending'),
     supabase.from('activity_logs').select('id', { count: 'exact', head: true })
       .in('client_id', clientIds.length ? clientIds : [''])
-      .eq('status', 'sent'),
+      .eq('status', 'sent')
+      .gte('created_at', startOfMonth.toISOString()),
   ])
 
   res.json({

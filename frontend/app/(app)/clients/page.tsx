@@ -11,6 +11,8 @@ interface ClientRow {
   name: string
   email: string
   created_at: string
+  pending_tasks: number
+  emails_sent: number
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
@@ -50,6 +52,12 @@ export default function ClientsPage() {
               <div>
                 <p className="text-sm font-medium">{client.name}</p>
                 <p className="text-xs text-muted-foreground">{client.email}</p>
+                <div className="flex gap-3 mt-1">
+                  {client.pending_tasks > 0 && (
+                    <span className="text-xs text-amber-500">{client.pending_tasks} tâche{client.pending_tasks > 1 ? 's' : ''} en attente</span>
+                  )}
+                  <span className="text-xs text-muted-foreground">{client.emails_sent} email{client.emails_sent > 1 ? 's' : ''} envoyé{client.emails_sent > 1 ? 's' : ''}</span>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="secondary">actif</Badge>
