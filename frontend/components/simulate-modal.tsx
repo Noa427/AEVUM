@@ -16,6 +16,7 @@ interface Props {
 export function SimulateModal({ open, onClose, onCreated }: Props) {
   const [clients, setClients] = useState<Client[]>([])
   const [clientId, setClientId] = useState('')
+  const [eventType, setEventType] = useState<'failed_payment' | 'checkout_completed'>('failed_payment')
   const [amount, setAmount] = useState('197')
   const [studentName, setStudentName] = useState('')
   const [productName, setProductName] = useState('')
@@ -34,12 +35,15 @@ export function SimulateModal({ open, onClose, onCreated }: Props) {
     try {
       await api.post('/api/simulate', {
         client_id: clientId,
-        amount: Number(amount),
-        student_name: studentName || undefined,
-        product_name: productName || undefined,
+        event_type: eventType,
+        custom_data: {
+          amount: Number(amount),
+          ...(studentName ? { student_name: studentName } : {}),
+          ...(productName ? { product_name: productName } : {}),
+        },
       })
       setClientId('')
-      setAmount('197')
+      setAmount(eventType === 'failed_payment' ? '197' : '297')
       setStudentName('')
       setProductName('')
       onCreated()
@@ -67,6 +71,17 @@ export function SimulateModal({ open, onClose, onCreated }: Props) {
             {clients.map(c => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
+          </select>
+          <select
+            value={eventType}
+            onChange={e => {
+              setEventType(e.target.value as typeof eventType)
+              setAmount(e.target.value === 'failed_payment' ? '197' : '297')
+            }}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          >
+            <option value="failed_payment">Paiement échoué</option>
+            <option value="checkout_completed">Achat complété (onboarding)</option>
           </select>
           <Input
             type="number"

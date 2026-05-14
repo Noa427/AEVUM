@@ -17,6 +17,23 @@ settingsRouter.get('/', async (_req, res) => {
   })
 })
 
+settingsRouter.get('/test-anthropic', async (_req, res) => {
+  const { data } = await supabase.from('settings').select('value').eq('key', 'anthropic_api_key').single()
+  if (!data?.value) return res.status(400).json({ error: 'Clé API non configurée' })
+  try {
+    const apiKey = decrypt(data.value)
+    const client = new Anthropic({ apiKey })
+    await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1,
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+    res.json({ ok: true })
+  } catch {
+    res.status(400).json({ error: 'Clé API invalide ou expirée' })
+  }
+})
+
 settingsRouter.put('/', async (req, res) => {
   const { auto_mode, anthropic_api_key } = req.body
 

@@ -31,26 +31,40 @@
 ## ÉTAT ACTUEL DU PROJET
 
 Phase 1 — Foundation : TERMINÉE
-Commits poussés sur Noa427/AEVUM (branch: main)
+Phase 2 — Logique métier complète : TERMINÉE
 
 ## DERNIÈRE FEATURE TERMINÉE
 
-Phase 1 Foundation complète :
-- Monorepo init (backend Express/TS + frontend Next.js 16 + supabase/migrations)
-- Supabase schema 6 tables (clients, client_configs, pending_tasks, activity_logs, scheduled_jobs, settings)
-- Auth admin (Supabase Auth, login page, middleware getUser())
-- CRUD clients avec configs chiffrées AES-256-GCM
-- Dashboard stats (3 compteurs)
-- Settings mode auto + clé Anthropic (validation live)
-- Sidebar navigation
+Phase 2 complète (logique métier bout en bout) :
 
-## PROCHAINE FEATURE À CODER
+Backend :
+- middleware/stripe-sig.ts : vérification signature webhook par client (AES decrypt + SDK Stripe)
+- routes/webhooks.ts : invoice.payment_failed + checkout.session.completed, dual mode auto/manuel
+- routes/simulate.ts : event_type (failed_payment | checkout_completed) + custom_data
+- routes/tasks.ts : GET paginé + filtres, POST /:id/preview (auto → Claude API), POST /:id/send (Resend + activity_log)
+- routes/history.ts : GET paginé + filtres (status, client_id, date_from, date_to)
+- routes/settings.ts : GET /test-anthropic pour valider clé API
+- routes/clients.ts : CRUD complet avec GET/:id et PUT/:id (upsert configs)
+- services/templates.ts : getTemplate() + buildPromptFailedPayment() + onboarding J0/J3/J7
+- services/claude.ts : callClaude(prompt, model)
+- services/resend.ts : from = '{sender_name} <domain>' via RESEND_FROM_DOMAIN
+- cron.ts : runScheduledJobs() — scan scheduled_jobs → crée pending_tasks
+- middleware/error-handler.ts : JSON structuré avec timestamp + code
+- render.yaml : web service + cron job hourly
 
-Phase 2 — Pilier "Récupération impayés" :
-1. Endpoint POST /api/webhooks/stripe/:clientId (vérif signature Stripe)
-2. Logique dual mode : manuel → INSERT pending_task / auto → Claude API + Resend
-3. Page /tasks avec drawer tâche manuelle (copier prompt → coller réponse → aperçu → envoyer)
-4. POST /api/tasks/:id/preview (génère aperçu email)
-5. POST /api/tasks/:id/send (Resend, log activity)
-6. Page /history (liste activity_logs)
-7. POST /api/simulate (crée fausse tâche pour test)
+Frontend :
+- /tasks : polling 30s, badge type (Impayé/Onboarding J0/J3/J7), montant
+- /tasks/TaskDrawer : copier prompt, coller réponse Claude, aperçu, envoyer
+- /tasks/SimulateModal : event_type selector (failed_payment | checkout_completed)
+- /history : filtres client + statut, pagination, modal détails avec payload
+- /clients : bouton Webhook (URL à copier), bouton Modifier (PUT /:id)
+- /dashboard : 5 dernières activités + lien vers /tasks si pending
+
+## PROCHAINE FEATURE À CODER (Phase 3)
+
+- Multi-tenant : plusieurs admins, isolation par user_id
+- Mode auto par défaut : config par client (pas global)
+- Templates éditables par client
+- Statistiques avancées : taux de conversion, revenus récupérés
+- Notifications push/slack sur nouveau webhook reçu
+- Interface de configuration des scheduled_jobs (délais J3/J7 configurables)

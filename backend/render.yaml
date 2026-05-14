@@ -8,3 +8,41 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: ENABLE_CRON
+        value: 'false'
+      - key: PORT
+        fromService:
+          type: web
+          name: automatepro-backend
+          property: port
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_DOMAIN
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+
+  - type: cron
+    name: automatepro-cron
+    env: node
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    schedule: '0 * * * *'
+    startCommand: node -e "const { runScheduledJobs } = require('./dist/cron'); runScheduledJobs().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1) })"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
