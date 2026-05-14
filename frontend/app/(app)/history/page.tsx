@@ -29,6 +29,8 @@ export default function HistoryPage() {
   const [selectedLog, setSelectedLog] = useState<LogRow | null>(null)
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterClient, setFilterClient] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const limit = 20
@@ -41,11 +43,17 @@ export default function HistoryPage() {
     const params = new URLSearchParams({ page: String(page), limit: String(limit) })
     if (filterStatus !== 'all') params.set('status', filterStatus)
     if (filterClient) params.set('client_id', filterClient)
+    if (dateFrom) params.set('date_from', new Date(dateFrom).toISOString())
+    if (dateTo) {
+      const end = new Date(dateTo)
+      end.setHours(23, 59, 59, 999)
+      params.set('date_to', end.toISOString())
+    }
 
     api.get<PaginatedLogs>(`/api/history?${params}`)
       .then(res => { setLogs(res.data ?? []); setTotal(res.total ?? 0) })
       .catch(() => {})
-  }, [filterStatus, filterClient, page])
+  }, [filterStatus, filterClient, dateFrom, dateTo, page])
 
   const ACTION_LABELS: Record<string, string> = {
     failed_payment_email: 'Relance impayé',
@@ -78,8 +86,22 @@ export default function HistoryPage() {
           <option value="">Tous les clients</option>
           {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        {(filterStatus !== 'all' || filterClient) && (
-          <Button variant="ghost" size="sm" onClick={() => { setFilterStatus('all'); setFilterClient(''); setPage(1) }}>
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={e => { setDateFrom(e.target.value); setPage(1) }}
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+          title="Du"
+        />
+        <input
+          type="date"
+          value={dateTo}
+          onChange={e => { setDateTo(e.target.value); setPage(1) }}
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+          title="Au"
+        />
+        {(filterStatus !== 'all' || filterClient || dateFrom || dateTo) && (
+          <Button variant="ghost" size="sm" onClick={() => { setFilterStatus('all'); setFilterClient(''); setDateFrom(''); setDateTo(''); setPage(1) }}>
             Réinitialiser
           </Button>
         )}
