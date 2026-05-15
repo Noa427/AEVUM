@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { supabase } from '../services/supabase'
-import { encrypt } from '../services/encryption'
+import { encrypt, decrypt } from '../services/encryption'
 import { requireAuth } from '../middleware/auth'
 
 export const clientsRouter = Router()
@@ -53,7 +53,7 @@ clientsRouter.get('/:id', async (req, res) => {
 
 clientsRouter.post('/', async (req, res) => {
   const userId = (req as any).userId
-  const { name, email, stripe_webhook_secret, sender_name } = req.body
+  const { name, email, stripe_webhook_secret, sender_name, auto_mode = true } = req.body
 
   if (!name || !email || !stripe_webhook_secret || !sender_name) {
     return res.status(400).json({ error: 'Champs requis : name, email, stripe_webhook_secret, sender_name' })
@@ -61,7 +61,7 @@ clientsRouter.post('/', async (req, res) => {
 
   const { data: client, error } = await supabase
     .from('clients')
-    .insert({ user_id: userId, name, email })
+    .insert({ user_id: userId, name, email, auto_mode })
     .select()
     .single()
   if (error) return res.status(500).json({ error: error.message })
@@ -80,11 +80,14 @@ clientsRouter.post('/', async (req, res) => {
 
 clientsRouter.put('/:id', async (req, res) => {
   const userId = (req as any).userId
-  const { name, email, stripe_webhook_secret, sender_name } = req.body
+  const { name, email, stripe_webhook_secret, sender_name, auto_mode } = req.body
+
+  const update: Record<string, any> = { name, email }
+  if (auto_mode !== undefined) update.auto_mode = auto_mode
 
   const { data: client, error } = await supabase
     .from('clients')
-    .update({ name, email })
+    .update(update)
     .eq('id', req.params.id)
     .eq('user_id', userId)
     .select()
@@ -105,6 +108,67 @@ clientsRouter.put('/:id', async (req, res) => {
   }
 
   res.json(client)
+})
+
+const PILIER_CONFIG_TYPES = [
+  'support_email_enabled',
+  'support_auto_reply',
+  'politique_remboursement',
+  'upsell_enabled',
+  'upsell_product_name',
+  'upsell_url',
+  'upsell_price',
+] as const
+
+clientsRouter.get('/:id/configs', async (req, res) => {
+  const userId = (req as any).userId
+  const { data: client } = await supabase
+    .from('clients')
+    .select('id')
+    .eq('id', req.params.id)
+    .eq('user_id', userId)
+    .single()
+  if (!client) return res.status(404).json({ error: 'Client introuvable' })
+
+  const { data: rows } = await supabase
+    .from('client_configs')
+    .select('config_type, encrypted_value')
+    .eq('client_id', req.params.id)
+    .in('config_type', PILIER_CONFIG_TYPES)
+
+  const result: Record<string, string> = {}
+  for (const r of rows ?? []) {
+    try { result[r.config_type] = decrypt(r.encrypted_value) } catch { /* skip */ }
+  }
+  res.json(result)
+})
+
+clientsRouter.put('/:id/configs', async (req, res) => {
+  const userId = (req as any).userId
+  const { data: client } = await supabase
+    .from('clients')
+    .select('id')
+    .eq('id', req.params.id)
+    .eq('user_id', userId)
+    .single()
+  if (!client) return res.status(404).json({ error: 'Client introuvable' })
+
+  const upserts: Array<{ client_id: string; config_type: string; encrypted_value: string }> = []
+  for (const key of PILIER_CONFIG_TYPES) {
+    if (!(key in req.body)) continue
+    const val = req.body[key]
+    if (typeof val !== 'string' && typeof val !== 'boolean') continue
+    upserts.push({ client_id: req.params.id, config_type: key, encrypted_value: encrypt(String(val)) })
+  }
+
+  if (upserts.length === 0) return res.status(400).json({ error: 'Aucune config valide fournie' })
+
+  const { error } = await supabase
+    .from('client_configs')
+    .upsert(upserts, { onConflict: 'client_id,config_type' })
+  if (error) return res.status(500).json({ error: error.message })
+
+  res.json({ ok: true })
 })
 
 clientsRouter.delete('/:id', async (req, res) => {

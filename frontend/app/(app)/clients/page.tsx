@@ -3,8 +3,9 @@ import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import { ClientForm } from '@/components/client-form'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { toast } from 'sonner'
 
 interface ClientRow {
   id: string
@@ -15,6 +16,16 @@ interface ClientRow {
   emails_sent: number
 }
 
+interface PilierConfigs {
+  support_email_enabled: string
+  support_auto_reply: string
+  politique_remboursement: string
+  upsell_enabled: string
+  upsell_product_name: string
+  upsell_url: string
+  upsell_price: string
+}
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
 
 export default function ClientsPage() {
@@ -22,6 +33,9 @@ export default function ClientsPage() {
   const [showForm, setShowForm] = useState(false)
   const [editingClient, setEditingClient] = useState<ClientRow | null>(null)
   const [webhookClient, setWebhookClient] = useState<ClientRow | null>(null)
+  const [pilierClient, setPilierClient] = useState<ClientRow | null>(null)
+  const [pilierConfigs, setPilierConfigs] = useState<Partial<PilierConfigs>>({})
+  const [pilierLoading, setPilierLoading] = useState(false)
 
   async function load() {
     const data = await api.get<ClientRow[]>('/api/clients')
@@ -32,8 +46,40 @@ export default function ClientsPage() {
 
   async function handleDelete(id: string) {
     if (!confirm('Supprimer ce client ?')) return
-    await api.delete(`/api/clients/${id}`)
-    await load()
+    try {
+      await api.delete(`/api/clients/${id}`)
+      toast.success('Client supprimé avec succès')
+      await load()
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur lors de la suppression')
+    }
+  }
+
+  async function openPilierModal(client: ClientRow) {
+    setPilierClient(client)
+    setPilierConfigs({})
+    try {
+      const data = await api.get<Partial<PilierConfigs>>(`/api/clients/${client.id}/configs`)
+      setPilierConfigs(data)
+    } catch { /* configs vides */ }
+  }
+
+  function setPilier(key: keyof PilierConfigs, value: string) {
+    setPilierConfigs(c => ({ ...c, [key]: value }))
+  }
+
+  async function savePilierConfigs() {
+    if (!pilierClient) return
+    setPilierLoading(true)
+    try {
+      await api.put(`/api/clients/${pilierClient.id}/configs`, pilierConfigs)
+      toast.success('Configuration enregistrée')
+      setPilierClient(null)
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur')
+    } finally {
+      setPilierLoading(false)
+    }
   }
 
   return (
@@ -121,6 +167,17 @@ export default function ClientsPage() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    onClick={() => openPilierModal(client)}
+                    className="text-xs gap-1.5 text-muted-foreground hover:text-foreground"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/>
+                    </svg>
+                    Piliers
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => setEditingClient(client)}
                     className="text-xs gap-1.5 text-muted-foreground hover:text-foreground"
                   >
@@ -196,6 +253,95 @@ export default function ClientsPage() {
               </Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal piliers 3 & 4 */}
+      <Dialog open={!!pilierClient} onOpenChange={() => setPilierClient(null)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Piliers IA — {pilierClient?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6 mt-2">
+
+            {/* Pilier 3 */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                <p className="text-sm font-semibold">Pilier 3 — Support client IA</p>
+              </div>
+              <div className="space-y-2 pl-3.5 border-l border-border/60">
+                <label className="flex items-center justify-between gap-3 cursor-pointer">
+                  <span className="text-sm text-muted-foreground">Activer le support email</span>
+                  <input
+                    type="checkbox"
+                    checked={pilierConfigs.support_email_enabled === 'true'}
+                    onChange={e => setPilier('support_email_enabled', e.target.checked ? 'true' : 'false')}
+                    className="w-4 h-4 accent-primary"
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-3 cursor-pointer">
+                  <span className="text-sm text-muted-foreground">Réponse automatique (sauf &apos;autre&apos;)</span>
+                  <input
+                    type="checkbox"
+                    checked={pilierConfigs.support_auto_reply !== 'false'}
+                    onChange={e => setPilier('support_auto_reply', e.target.checked ? 'true' : 'false')}
+                    className="w-4 h-4 accent-primary"
+                  />
+                </label>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Politique de remboursement (utilisée dans les réponses IA)</p>
+                  <textarea
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[80px] resize-y focus:outline-none focus:ring-2 focus:ring-ring/50"
+                    placeholder="Ex: Remboursement possible sous 30 jours sur demande par email..."
+                    value={pilierConfigs.politique_remboursement ?? ''}
+                    onChange={e => setPilier('politique_remboursement', e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Pilier 4 */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                <p className="text-sm font-semibold">Pilier 4 — Upsell automatique J+30</p>
+              </div>
+              <div className="space-y-2 pl-3.5 border-l border-border/60">
+                <label className="flex items-center justify-between gap-3 cursor-pointer">
+                  <span className="text-sm text-muted-foreground">Activer l&apos;upsell automatique</span>
+                  <input
+                    type="checkbox"
+                    checked={pilierConfigs.upsell_enabled === 'true'}
+                    onChange={e => setPilier('upsell_enabled', e.target.checked ? 'true' : 'false')}
+                    className="w-4 h-4 accent-primary"
+                  />
+                </label>
+                <Input
+                  placeholder="Nom de l'offre upsell (ex: Masterclass avancée)"
+                  value={pilierConfigs.upsell_product_name ?? ''}
+                  onChange={e => setPilier('upsell_product_name', e.target.value)}
+                />
+                <Input
+                  placeholder="URL de la page de vente"
+                  value={pilierConfigs.upsell_url ?? ''}
+                  onChange={e => setPilier('upsell_url', e.target.value)}
+                />
+                <Input
+                  placeholder="Prix affiché (ex: 297€)"
+                  value={pilierConfigs.upsell_price ?? ''}
+                  onChange={e => setPilier('upsell_price', e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border/40">
+              <Button variant="outline" onClick={() => setPilierClient(null)}>Annuler</Button>
+              <Button onClick={savePilierConfigs} disabled={pilierLoading}>
+                {pilierLoading ? 'Enregistrement...' : 'Enregistrer'}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

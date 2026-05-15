@@ -36,7 +36,7 @@ services:
     rootDir: backend
     buildCommand: npm install && npm run build
     schedule: '0 * * * *'
-    startCommand: node -e "const { runScheduledJobs } = require('./dist/cron'); runScheduledJobs().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1) })"
+    startCommand: node -e "const c = require('./dist/cron'); c.runScheduledJobs().then(() => c.sendWeeklyReport()).then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1) })"
     envVars:
       - key: NODE_ENV
         value: production
@@ -45,4 +45,8 @@ services:
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: ENCRYPTION_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_DOMAIN
         sync: false

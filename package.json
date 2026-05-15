@@ -1,5 +1,5 @@
 {
-  "name": "automatepro",
+  "name": "aevum",
   "private": true,
   "scripts": {
     "dev:backend": "cd backend && npm run dev",

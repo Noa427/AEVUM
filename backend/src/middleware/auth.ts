@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import { createClient } from '@supabase/supabase-js'
+import { logAdminAccess } from './admin-access-log'
 
 // Utilise anon key + JWT user pour valider les sessions frontend
 const supabaseAuth = createClient(
@@ -15,5 +16,6 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   if (error || !user) return res.status(401).json({ error: 'Token invalide' })
 
   ;(req as any).userId = user.id
+  logAdminAccess(req, user.id)
   next()
 }

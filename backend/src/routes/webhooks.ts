@@ -16,7 +16,7 @@ webhooksRouter.post('/:clientId', verifyStripeSignature, async (req, res) => {
 
   const { data: client } = await supabase
     .from('clients')
-    .select('email')
+    .select('email, auto_mode')
     .eq('id', clientId)
     .single()
 
@@ -29,12 +29,7 @@ webhooksRouter.post('/:clientId', verifyStripeSignature, async (req, res) => {
   for (const c of configs ?? []) configMap[c.config_type] = decrypt(c.encrypted_value)
   const sender_name = configMap['sender_name'] || 'Formateur'
 
-  const { data: autoMode } = await supabase
-    .from('settings')
-    .select('value')
-    .eq('key', 'auto_mode')
-    .single()
-  const isAuto = autoMode?.value === 'true'
+  const isAuto = (client as any)?.auto_mode ?? true
 
   if (event.type === 'payment_intent.payment_failed' || event.type === 'invoice.payment_failed') {
     await handleFailedPayment({ event, clientId, client, sender_name, isAuto })
@@ -177,6 +172,8 @@ async function handleCheckoutCompleted(opts: {
   const j3 = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000)
   const j7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
 
+  const j30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+
   await supabase.from('scheduled_jobs').insert([
     {
       client_id: clientId,
@@ -190,6 +187,13 @@ async function handleCheckoutCompleted(opts: {
       job_type: 'onboarding_j7',
       context_json,
       scheduled_for: j7.toISOString(),
+      status: 'pending',
+    },
+    {
+      client_id: clientId,
+      job_type: 'upsell',
+      context_json,
+      scheduled_for: j30.toISOString(),
       status: 'pending',
     },
   ])
@@ -217,5 +221,11 @@ async function handleCheckoutCompleted(opts: {
       .from('pending_tasks')
       .update({ status: 'failed', ai_response: err.message })
       .eq('id', task.id)
+    await supabase.from('activity_logs').insert({
+      client_id: clientId,
+      action_type: 'onboarding_j0_email',
+      payload_json: { error: err.message, to: context_json.customer_email },
+      status: 'failed',
+    })
   }
 }

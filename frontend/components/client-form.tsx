@@ -4,6 +4,7 @@ import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { toast } from 'sonner'
 
 interface ClientData {
   id: string
@@ -47,13 +48,16 @@ export function ClientForm({ open, initialData, onClose, onCreated }: Props) {
         if (form.stripe_webhook_secret) payload.stripe_webhook_secret = form.stripe_webhook_secret
         if (form.sender_name) payload.sender_name = form.sender_name
         await api.put(`/api/clients/${initialData!.id}`, payload)
+        toast.success('Client mis à jour')
       } else {
         await api.post('/api/clients', form)
+        toast.success('Client créé avec succès')
       }
       onCreated()
       onClose()
     } catch (err: any) {
       setError(err.message)
+      toast.error(err.message || 'Une erreur est survenue')
     } finally {
       setLoading(false)
     }

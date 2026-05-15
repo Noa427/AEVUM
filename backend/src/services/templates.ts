@@ -1,4 +1,12 @@
-export type TaskType = 'failed_payment' | 'onboarding_j0' | 'onboarding_j3' | 'onboarding_j7'
+export type TaskType =
+  | 'failed_payment'
+  | 'onboarding_j0'
+  | 'onboarding_j3'
+  | 'onboarding_j7'
+  | 'support_manual'
+  | 'upsell'
+
+export type SupportCategory = 'accès_formation' | 'remboursement' | 'technique' | 'autre'
 
 export function getTemplate(
   task_type: TaskType,
@@ -13,6 +21,10 @@ export function getTemplate(
       return { subject_hint: 'Suivi J+3', prompt: buildPromptOnboardingJ3(ctx) }
     case 'onboarding_j7':
       return { subject_hint: 'Engagement J+7', prompt: buildPromptOnboardingJ7(ctx) }
+    case 'upsell':
+      return { subject_hint: 'Offre exclusive', prompt: buildPromptUpsell(ctx) }
+    case 'support_manual':
+      return { subject_hint: 'Support manuel', prompt: '' }
   }
 }
 
@@ -101,6 +113,118 @@ function buildPromptOnboardingJ7(ctx: Record<string, any>): string {
     '<p>...</p>',
     '',
     'Ton motivant et généreux, 3 paragraphes max.',
+    'HTML simple uniquement : <p>, <strong>, <a> autorisés.',
+  ].filter(Boolean).join('\n')
+}
+
+export function buildPromptSupportClassify(ctx: { from: string; subject: string; body: string }): string {
+  return [
+    'Classifie cet email entrant en une seule catégorie parmi : accès_formation, remboursement, technique, autre.',
+    '',
+    `De : ${ctx.from}`,
+    `Objet : ${ctx.subject}`,
+    `Message : ${ctx.body.slice(0, 1000)}`,
+    '',
+    'Réponds UNIQUEMENT avec la catégorie, sans aucune explication ni ponctuation.',
+  ].join('\n')
+}
+
+export function buildPromptSupportAcces(ctx: Record<string, any>): string {
+  return [
+    'Tu es expert en support client pour formateurs en ligne.',
+    'Un élève n\'arrive pas à accéder à sa formation. Rédige une réponse email professionnelle et rassurante.',
+    '',
+    `Formateur : ${ctx.sender_name ?? 'Formateur'}`,
+    ctx.student_name ? `Prénom élève : ${ctx.student_name}` : '',
+    ctx.product_name ? `Formation : ${ctx.product_name}` : '',
+    `Email de l'élève : ${ctx.from}`,
+    `Objet original : ${ctx.subject}`,
+    '',
+    'Contenu attendu : reconnaître le problème, donner les étapes pour accéder à la formation (vérifier email de confirmation, espace membres, contacter le support si besoin), rassurer.',
+    '',
+    'Format de ta réponse (OBLIGATOIRE) :',
+    '[SUBJECT]Re: [sujet original abrégé][/SUBJECT]',
+    '',
+    '<p>...</p>',
+    '',
+    'Ton professionnel et rassurant, 2-3 paragraphes max.',
+    'HTML simple uniquement : <p>, <strong>, <a> autorisés.',
+  ].filter(Boolean).join('\n')
+}
+
+export function buildPromptSupportRemboursement(ctx: Record<string, any>): string {
+  const politique = ctx.politique_remboursement
+    ? `Politique de remboursement du formateur : ${ctx.politique_remboursement}`
+    : 'Politique de remboursement : à préciser selon les conditions générales.'
+  return [
+    'Tu es expert en support client pour formateurs en ligne.',
+    'Un élève demande un remboursement. Rédige une réponse email empathique et claire.',
+    '',
+    `Formateur : ${ctx.sender_name ?? 'Formateur'}`,
+    ctx.student_name ? `Prénom élève : ${ctx.student_name}` : '',
+    `Email de l'élève : ${ctx.from}`,
+    `Objet original : ${ctx.subject}`,
+    politique,
+    '',
+    'Contenu attendu : accuser réception de la demande, expliquer la politique de remboursement de manière claire et bienveillante, indiquer les prochaines étapes.',
+    '',
+    'Format de ta réponse (OBLIGATOIRE) :',
+    '[SUBJECT]Re: [sujet original abrégé][/SUBJECT]',
+    '',
+    '<p>...</p>',
+    '',
+    'Ton empathique et professionnel, 3 paragraphes max.',
+    'HTML simple uniquement : <p>, <strong>, <a> autorisés.',
+  ].filter(Boolean).join('\n')
+}
+
+export function buildPromptSupportTechnique(ctx: Record<string, any>): string {
+  return [
+    'Tu es expert en support client pour formateurs en ligne.',
+    'Un élève rencontre un problème technique. Rédige une réponse email avec des étapes de diagnostic claires.',
+    '',
+    `Formateur : ${ctx.sender_name ?? 'Formateur'}`,
+    ctx.student_name ? `Prénom élève : ${ctx.student_name}` : '',
+    `Email de l'élève : ${ctx.from}`,
+    `Objet original : ${ctx.subject}`,
+    `Description du problème : ${ctx.body?.slice(0, 500) ?? ''}`,
+    '',
+    'Contenu attendu : accuser réception, proposer 3-4 étapes de diagnostic (vider le cache, essayer un autre navigateur, désactiver les extensions, vérifier la connexion), proposer un suivi.',
+    '',
+    'Format de ta réponse (OBLIGATOIRE) :',
+    '[SUBJECT]Re: [sujet original abrégé][/SUBJECT]',
+    '',
+    '<p>...</p>',
+    '<ol><li>...</li></ol>',
+    '',
+    'Ton pédagogique et rassurant, concis.',
+    'HTML simple uniquement : <p>, <strong>, <ol>, <li>, <a> autorisés.',
+  ].filter(Boolean).join('\n')
+}
+
+export function buildPromptUpsell(ctx: Record<string, any>): string {
+  return [
+    'Tu es expert en email marketing pour formateurs en ligne.',
+    'Rédige un email d\'upsell personnalisé pour proposer une offre complémentaire à un ancien élève.',
+    '',
+    `Formateur : ${ctx.sender_name ?? 'Formateur'}`,
+    ctx.student_name ? `Prénom élève : ${ctx.student_name}` : '',
+    ctx.product_name ? `Formation suivie : ${ctx.product_name}` : '',
+    `Nouvelle offre : ${ctx.upsell_product_name ?? 'Offre premium'}`,
+    ctx.upsell_price ? `Prix : ${ctx.upsell_price}` : '',
+    ctx.upsell_url ? `Lien : ${ctx.upsell_url}` : '',
+    '',
+    'Contexte : l\'élève a terminé sa formation il y a environ 30 jours. C\'est le moment idéal pour proposer une montée en gamme.',
+    '',
+    'Contenu attendu : rappeler les résultats obtenus avec la formation précédente, présenter la nouvelle offre comme l\'étape logique suivante, CTA clair.',
+    '',
+    'Format de ta réponse (OBLIGATOIRE) :',
+    '[SUBJECT]Objet de l\'email[/SUBJECT]',
+    '',
+    '<p>...</p>',
+    ctx.upsell_url ? `<p><a href="${ctx.upsell_url}">Découvrir ${ctx.upsell_product_name ?? 'l\'offre'}</a></p>` : '',
+    '',
+    'Ton enthousiaste et valorisant, 3-4 paragraphes max.',
     'HTML simple uniquement : <p>, <strong>, <a> autorisés.',
   ].filter(Boolean).join('\n')
 }

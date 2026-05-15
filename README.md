@@ -11,6 +11,90 @@ Outil SaaS pour formateurs en ligne : automatise les emails de relance impayés 
 - **IA** : Anthropic Claude (optionnel — mode manuel disponible sans clé)
 - **Paiements** : Stripe Webhooks
 
+## Interface utilisateur
+
+### Design system
+
+- **Police** : Inter (Google Fonts)
+- **Thème** : dark/light/système via `next-themes`
+- **Couleurs accent** : tokens HSL définis dans `globals.css` (primary, accent, muted…)
+- **Inspiration** : Linear, Vercel, Notion — minimaliste, sobre, professionnel
+
+### Composants shadcn/ui utilisés
+
+| Composant | Usage |
+|-----------|-------|
+| `Button` | Boutons d'action partout, variantes default/outline/ghost |
+| `Badge` | Statuts et types de tâches (remplacés par classes CSS custom) |
+| `Dialog` / `DialogContent` / `DialogHeader` / `DialogTitle` | Modals clients, webhook, tâches, historique |
+| `Input` | Formulaires client, clé API |
+| `Switch` | Toggle mode automatique (Settings) |
+| `Table` | (disponible, non utilisé en production) |
+
+### Dépendances UI ajoutées
+
+| Package | Usage |
+|---------|-------|
+| `sonner` | Toasts (succès vert, erreur rouge, info bleu) — position bottom-right |
+| `lucide-react` | Icônes (déjà présent) : `Zap`, `LayoutDashboard`, `Users`, `Clock`, `History`, `Settings`, `LogOut`, `Menu`, `X`, `ArrowRight`, `TrendingUp`, `Activity`, `Mail`, `Users` |
+
+### Fichiers modifiés (UI uniquement)
+
+**Phase 1 — Sidebar + Dashboard**
+- `frontend/app/globals.css` — design tokens, animations, skeleton, badges, sidebar
+- `frontend/components/sidebar.tsx` — logo, barre active, avatar, responsive mobile
+- `frontend/app/(app)/layout.tsx` — hamburger menu mobile, header sticky
+- `frontend/app/(app)/dashboard/page.tsx` — StatCards avec icônes, skeleton, empty state, badges custom
+
+**Phase 2 — Clients + Tâches + TaskDrawer**
+- `frontend/app/(app)/clients/page.tsx` — avatars initiales, empty state CTA, badges colorés, icônes actions
+- `frontend/app/(app)/tasks/page.tsx` — badges task_type colorés, date relative, empty state, pastilles dot
+- `frontend/components/task-drawer.tsx` — header sticky, section Contexte grid, bouton Copier feedback, spinner, état done
+
+**Phase 3 — Historique + Paramètres**
+- `frontend/app/(app)/history/page.tsx` — filtres stylisés, lignes alternées, pagination avec numéros, modal détails grid
+- `frontend/app/(app)/settings/page.tsx` — sections cards, eye-toggle clé API, spinners, badge validité, section À propos
+
+**Phase 4 — Finitions globales**
+- `frontend/app/layout.tsx` — `<Toaster>` sonner avec `richColors`
+- `frontend/components/ui/skeleton.tsx` — composants `<Skeleton>`, `<SkeletonText>`, `<SkeletonStatCard>`, `<SkeletonList>`, `<SkeletonListRow>`
+
+### Utiliser les toasts sonner
+
+```tsx
+import { toast } from 'sonner'
+
+// Succès
+toast.success('Client créé avec succès')
+
+// Erreur
+toast.error('Une erreur est survenue')
+
+// Info
+toast.info('Rafraîchissement en cours...')
+
+// Promise
+toast.promise(apiCall(), {
+  loading: 'Envoi en cours...',
+  success: 'Email envoyé !',
+  error: 'Échec de l\'envoi',
+})
+```
+
+### Utiliser les Skeletons
+
+```tsx
+import { SkeletonList, SkeletonStatCard } from '@/components/ui/skeleton'
+
+// Pendant le chargement d'une liste
+{loading ? <SkeletonList rows={5} /> : <MaListe />}
+
+// Pendant le chargement d'une stat card
+{loading ? <SkeletonStatCard /> : <StatCard value={42} />}
+```
+
+---
+
 ## Installation locale
 
 ```bash

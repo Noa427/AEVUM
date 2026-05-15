@@ -4,6 +4,7 @@ import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { toast } from 'sonner'
 
 interface Client { id: string; name: string }
 
@@ -42,6 +43,7 @@ export function SimulateModal({ open, onClose, onCreated }: Props) {
           ...(productName ? { product_name: productName } : {}),
         },
       })
+      toast.success('Simulation envoyée')
       setClientId('')
       setAmount(eventType === 'failed_payment' ? '197' : '297')
       setStudentName('')
@@ -50,6 +52,7 @@ export function SimulateModal({ open, onClose, onCreated }: Props) {
       onClose()
     } catch (err: any) {
       setError(err.message)
+      toast.error(err.message || 'Erreur lors de la simulation')
     } finally {
       setLoading(false)
     }

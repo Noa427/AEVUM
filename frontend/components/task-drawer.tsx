@@ -4,6 +4,7 @@ import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
+import { toast } from 'sonner'
 
 interface Task {
   id: string
@@ -26,6 +27,8 @@ const TYPE_LABELS: Record<string, string> = {
   onboarding_j0: 'Onboarding J0',
   onboarding_j3: 'Onboarding J+3',
   onboarding_j7: 'Onboarding J+7',
+  support_manual: 'Support IA',
+  upsell: 'Upsell',
 }
 
 const TYPE_BADGE_CLASS: Record<string, string> = {
@@ -33,6 +36,8 @@ const TYPE_BADGE_CLASS: Record<string, string> = {
   onboarding_j0: 'badge-onboarding-j0',
   onboarding_j3: 'badge-onboarding-j3',
   onboarding_j7: 'badge-onboarding-j7',
+  support_manual: 'badge-support',
+  upsell: 'badge-upsell',
 }
 
 export function TaskDrawer({ task, onClose, onSent }: Props) {
@@ -74,10 +79,12 @@ export function TaskDrawer({ task, onClose, onSent }: Props) {
         body_html: preview!.body_html,
         ai_response: aiResponse,
       })
+      toast.success('Email envoyé avec succès')
       setState('done')
       setTimeout(() => { handleClose(); onSent() }, 1500)
     } catch (err: any) {
       setError(err.message)
+      toast.error(err.message || "Erreur lors de l'envoi")
       setState('preview')
     }
   }
@@ -144,6 +151,44 @@ export function TaskDrawer({ task, onClose, onSent }: Props) {
                   <>
                     <span className="text-xs text-muted-foreground">Formation</span>
                     <span className="text-xs font-medium">{task.context_json.product_name}</span>
+                  </>
+                )}
+                {task.context_json.from && (
+                  <>
+                    <span className="text-xs text-muted-foreground">De</span>
+                    <span className="text-xs font-medium truncate">{task.context_json.from}</span>
+                  </>
+                )}
+                {task.context_json.subject && (
+                  <>
+                    <span className="text-xs text-muted-foreground">Objet</span>
+                    <span className="text-xs font-medium truncate">{task.context_json.subject}</span>
+                  </>
+                )}
+                {task.context_json.category && (
+                  <>
+                    <span className="text-xs text-muted-foreground">Catégorie IA</span>
+                    <span className="text-xs font-medium">{task.context_json.category}</span>
+                  </>
+                )}
+                {task.context_json.body && (
+                  <>
+                    <span className="text-xs text-muted-foreground col-span-2 mt-1">Message reçu</span>
+                    <span className="text-xs text-muted-foreground col-span-2 bg-muted/40 rounded p-2 line-clamp-4">
+                      {task.context_json.body}
+                    </span>
+                  </>
+                )}
+                {task.context_json.upsell_product_name && (
+                  <>
+                    <span className="text-xs text-muted-foreground">Offre upsell</span>
+                    <span className="text-xs font-medium">{task.context_json.upsell_product_name}</span>
+                  </>
+                )}
+                {task.context_json.upsell_price && (
+                  <>
+                    <span className="text-xs text-muted-foreground">Prix</span>
+                    <span className="text-xs font-medium">{task.context_json.upsell_price}</span>
                   </>
                 )}
                 {task.context_json.simulated && (

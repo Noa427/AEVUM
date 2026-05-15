@@ -8,13 +8,19 @@ import { webhooksRouter } from './routes/webhooks'
 import { tasksRouter } from './routes/tasks'
 import { historyRouter } from './routes/history'
 import { simulateRouter } from './routes/simulate'
+import { portalRouter } from './routes/portal'
+import { supportRouter } from './routes/support'
 import { errorHandler } from './middleware/error-handler'
+import { apiLimiter, webhookLimiter, simulateLimiter, portalLimiter } from './middleware/rate-limit'
 import { runScheduledJobs } from './cron'
 
 const app = express()
 const PORT = process.env.PORT || 3001
 
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3000', credentials: true }))
+const adminCors = cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3000', credentials: true })
+const portalCors = cors({ origin: process.env.VITRINE_URL || 'http://localhost:3000', credentials: false })
+
+app.set('trust proxy', 1)
 
 app.use((req, _res, next) => {
   if (req.path.startsWith('/api/webhooks')) return next()
@@ -22,13 +28,23 @@ app.use((req, _res, next) => {
 })
 
 app.get('/health', (_, res) => res.json({ ok: true, timestamp: new Date().toISOString() }))
+
+// Routes admin (dashboard/admin frontend)
+app.use('/api', adminCors, apiLimiter)
 app.use('/api/clients', clientsRouter)
 app.use('/api/settings', settingsRouter)
 app.use('/api/dashboard', dashboardRouter)
-app.use('/api/webhooks', express.raw({ type: 'application/json' }), webhooksRouter)
+app.use('/api/webhooks', webhookLimiter, express.raw({ type: 'application/json' }), webhooksRouter)
 app.use('/api/tasks', tasksRouter)
 app.use('/api/history', historyRouter)
-app.use('/api/simulate', simulateRouter)
+app.use('/api/simulate', simulateLimiter, simulateRouter)
+
+// Routes portail client (site vitrine)
+app.use('/api/portal', portalCors, portalLimiter, portalRouter)
+
+// Routes support IA (admin-protected)
+app.use('/api/support', adminCors, apiLimiter, supportRouter)
+
 app.use(errorHandler)
 
 app.listen(PORT, () => {

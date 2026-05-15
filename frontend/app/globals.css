@@ -1,4 +1,30 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+@theme inline {
+  --color-background:         hsl(var(--background));
+  --color-foreground:         hsl(var(--foreground));
+  --color-card:               hsl(var(--card));
+  --color-card-foreground:    hsl(var(--card-foreground));
+  --color-popover:            hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary:            hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary:          hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted:              hsl(var(--muted));
+  --color-muted-foreground:   hsl(var(--muted-foreground));
+  --color-accent:             hsl(var(--accent));
+  --color-accent-foreground:  hsl(var(--accent-foreground));
+  --color-destructive:        hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border:             hsl(var(--border));
+  --color-input:              hsl(var(--input));
+  --color-ring:               hsl(var(--ring));
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+}
 
 @layer base {
   :root {
@@ -256,6 +282,30 @@
     background: hsl(270 65% 60% / 0.18);
     color: hsl(270 75% 75%);
     border: 1px solid hsl(270 65% 60% / 0.35);
+  }
+
+  .badge-support {
+    background: hsl(197 80% 50% / 0.15);
+    color: hsl(197 70% 30%);
+    border: 1px solid hsl(197 80% 50% / 0.3);
+  }
+
+  .dark .badge-support {
+    background: hsl(197 70% 50% / 0.18);
+    color: hsl(197 80% 72%);
+    border: 1px solid hsl(197 70% 50% / 0.35);
+  }
+
+  .badge-upsell {
+    background: hsl(38 90% 55% / 0.15);
+    color: hsl(38 80% 30%);
+    border: 1px solid hsl(38 90% 55% / 0.3);
+  }
+
+  .dark .badge-upsell {
+    background: hsl(38 80% 55% / 0.18);
+    color: hsl(38 90% 70%);
+    border: 1px solid hsl(38 80% 55% / 0.35);
   }
 
   /* ── Status badges ────────────────────────────────────────── */

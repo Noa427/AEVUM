@@ -37,12 +37,12 @@ tasksRouter.post('/:id/preview', async (req, res) => {
     .single()
   if (!task) return res.status(404).json({ error: 'Tâche introuvable' })
 
-  const { data: autoModeSetting } = await supabase
-    .from('settings')
-    .select('value')
-    .eq('key', 'auto_mode')
+  const { data: client } = await supabase
+    .from('clients')
+    .select('auto_mode')
+    .eq('id', task.client_id)
     .single()
-  const isAuto = autoModeSetting?.value === 'true'
+  const isAuto = client?.auto_mode ?? true
 
   try {
     let aiResponse: string

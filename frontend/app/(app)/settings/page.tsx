@@ -5,6 +5,7 @@ import { api } from '@/lib/api'
 import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
 
 interface SettingsData {
   auto_mode: boolean
@@ -32,9 +33,9 @@ export default function SettingsPage() {
       await api.put('/api/settings', { anthropic_api_key: apiKey })
       setSettings(s => ({ ...s, has_api_key: true }))
       setApiKey('')
-      setMessage({ text: 'Clé sauvegardée ✓', ok: true })
+      toast.success('Clé API Anthropic sauvegardée')
     } catch (err: any) {
-      setMessage({ text: err.message, ok: false })
+      toast.error(err.message || 'Erreur lors de la sauvegarde')
     } finally {
       setSaving(false)
     }
@@ -45,9 +46,9 @@ export default function SettingsPage() {
     setMessage(null)
     try {
       await api.get('/api/settings/test-anthropic')
-      setMessage({ text: 'Clé valide ✓', ok: true })
+      toast.success('Clé API valide')
     } catch (err: any) {
-      setMessage({ text: err.message, ok: false })
+      toast.error(err.message || 'Clé API invalide')
     } finally {
       setTesting(false)
     }
@@ -57,8 +58,9 @@ export default function SettingsPage() {
     try {
       await api.put('/api/settings', { auto_mode: checked })
       setSettings(s => ({ ...s, auto_mode: checked }))
+      toast.success(checked ? 'Mode automatique activé' : 'Mode automatique désactivé')
     } catch (err: any) {
-      setMessage({ text: err.message, ok: false })
+      toast.error(err.message || 'Erreur lors du changement de mode')
     }
   }
 

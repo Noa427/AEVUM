@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import Link from 'next/link'
 import { Users, Clock, Mail, Activity, ArrowRight, TrendingUp } from 'lucide-react'
+import { SkeletonStatCard, SkeletonList } from '@/components/ui/skeleton'
 
 interface DashboardStats {
   clients: number
@@ -29,10 +30,11 @@ const ACTION_LABELS: Record<string, string> = {
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [recentLogs, setRecentLogs] = useState<LogRow[]>([])
+  const [loadingLogs, setLoadingLogs] = useState(true)
 
   useEffect(() => {
     api.get<DashboardStats>('/api/dashboard').then(setStats).catch(console.error)
-    api.get<{ data: LogRow[] }>('/api/history?limit=5').then(r => setRecentLogs(r.data ?? [])).catch(() => {})
+    api.get<{ data: LogRow[] }>('/api/history?limit=5').then(r => setRecentLogs(r.data ?? [])).finally(() => setLoadingLogs(false))
   }, [])
 
   return (
@@ -92,7 +94,9 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        {recentLogs.length === 0 ? (
+        {loadingLogs ? (
+          <SkeletonList rows={5} />
+        ) : recentLogs.length === 0 ? (
           /* Empty state */
           <div className="flex flex-col items-center justify-center py-12 text-center border border-border/60 rounded-lg bg-card/40">
             <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3">
@@ -130,6 +134,7 @@ export default function DashboardPage() {
   )
 }
 
+
 const iconColors: Record<string, string> = {
   blue:  'bg-blue-500/10 text-blue-500 dark:bg-blue-500/15 dark:text-blue-400',
   amber: 'bg-amber-500/10 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400',
@@ -151,27 +156,20 @@ function StatCard({
 }) {
   const isLoading = value === undefined
 
+  if (isLoading) return <SkeletonStatCard />
+
   return (
     <div className={`card-elevated p-5 ${highlight ? 'border border-amber-500/30' : ''}`}>
       <div className="flex items-start justify-between mb-3">
         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${iconColors[color]}`}>
           <Icon className="w-4 h-4" />
         </div>
-        {!isLoading && value > 0 && (
+        {value > 0 && (
           <TrendingUp className="w-3.5 h-3.5 text-emerald-500 opacity-70" />
         )}
       </div>
-      {isLoading ? (
-        <>
-          <div className="skeleton h-8 w-16 mb-1.5" />
-          <div className="skeleton h-3 w-24" />
-        </>
-      ) : (
-        <>
-          <p className="text-3xl font-semibold tabular-nums">{value}</p>
-          <p className="text-xs text-muted-foreground mt-1">{title}</p>
-        </>
-      )}
+      <p className="text-3xl font-semibold tabular-nums">{value}</p>
+      <p className="text-xs text-muted-foreground mt-1">{title}</p>
     </div>
   )
 }

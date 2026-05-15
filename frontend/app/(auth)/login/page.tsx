@@ -29,7 +29,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-background">
       <form onSubmit={handleLogin} className="w-full max-w-sm space-y-4 p-6">
         <div className="space-y-1 mb-6">
-          <h1 className="text-xl font-semibold">AutomatePro</h1>
+          <h1 className="text-xl font-semibold">AEVUM</h1>
           <p className="text-sm text-muted-foreground">Connexion à votre espace admin</p>
         </div>
         <Input
