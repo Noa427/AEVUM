@@ -24,6 +24,9 @@ supportRouter.post('/inbound', async (req, res) => {
   if (!from || !subject || !body || !client_id) {
     return res.status(400).json({ error: 'Champs requis : from, subject, body, client_id' })
   }
+  if (typeof body !== 'string' || body.length > 10000) {
+    return res.status(400).json({ error: 'body invalide ou trop long (max 10 000 caractères)' })
+  }
 
   const { data: client } = await supabase
     .from('clients')

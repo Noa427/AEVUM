@@ -42,6 +42,14 @@ export const portalAuthLimiter = rateLimit({
   message: msg('Trop de tentatives d\'authentification, réessayez dans une minute.'),
 })
 
+export const loginLimiter = rateLimit({
+  windowMs: 15 * 60_000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: msg('Trop de tentatives de connexion, réessayez dans 15 minutes.'),
+})
+
 export const aiLimiter = rateLimit({
   windowMs: 60_000,
   max: 10,

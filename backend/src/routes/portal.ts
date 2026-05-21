@@ -31,11 +31,15 @@ async function getClientConfigs(clientId: string): Promise<Record<string, string
 
 // POST /api/portal/:token/auth
 portalRouter.post('/:token/auth', portalAuthLimiter, async (req, res) => {
-  const client = await getClientByToken(req.params.token)
+  const client = await getClientByToken(String(req.params.token))
   if (!client) return res.status(404).json({ error: 'Token invalide' })
 
   const { email } = req.body
-  if (!email || client.client_email?.toLowerCase() !== (email as string).toLowerCase()) {
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!email || typeof email !== 'string' || !EMAIL_RE.test(email)) {
+    return res.status(400).json({ error: 'Email invalide' })
+  }
+  if (client.client_email?.toLowerCase() !== email.toLowerCase()) {
     return res.status(401).json({ error: 'Email incorrect' })
   }
 
@@ -44,7 +48,7 @@ portalRouter.post('/:token/auth', portalAuthLimiter, async (req, res) => {
 
 // GET /api/portal/:token
 portalRouter.get('/:token', async (req, res) => {
-  const client = await getClientByToken(req.params.token)
+  const client = await getClientByToken(String(req.params.token))
   if (!client) return res.status(404).json({ error: 'Token invalide' })
 
   const configs = await getClientConfigs(client.id)
@@ -63,7 +67,7 @@ portalRouter.get('/:token', async (req, res) => {
 
 // PUT /api/portal/:token
 portalRouter.put('/:token', async (req, res) => {
-  const client = await getClientByToken(req.params.token)
+  const client = await getClientByToken(String(req.params.token))
   if (!client) return res.status(404).json({ error: 'Token invalide' })
 
   const { sender_name, templates } = req.body
@@ -97,7 +101,7 @@ portalRouter.put('/:token', async (req, res) => {
 
 // GET /api/portal/:token/history
 portalRouter.get('/:token/history', async (req, res) => {
-  const client = await getClientByToken(req.params.token)
+  const client = await getClientByToken(String(req.params.token))
   if (!client) return res.status(404).json({ error: 'Token invalide' })
 
   const page = Math.max(1, parseInt(req.query.page as string) || 1)

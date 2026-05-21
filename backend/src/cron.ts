@@ -94,7 +94,7 @@ async function handleUpsellJob(job: any): Promise<void> {
     return
   }
 
-  const ctx = {
+  const ctx: Record<string, any> = {
     ...(job.context_json as Record<string, any>),
     upsell_product_name: configMap['upsell_product_name'] ?? '',
     upsell_url: configMap['upsell_url'] ?? '',

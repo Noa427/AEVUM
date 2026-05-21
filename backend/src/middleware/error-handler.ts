@@ -8,8 +8,9 @@ export function errorHandler(err: any, _req: Request, res: Response, _next: Next
     stack: process.env.NODE_ENV !== 'production' ? err.stack : undefined,
   }))
   const status = err.status || err.statusCode || 500
+  const isDev = process.env.NODE_ENV !== 'production'
   res.status(status).json({
-    error: err.message || 'Erreur interne',
-    code: err.code || 'INTERNAL_ERROR',
+    error: isDev ? (err.message || 'Erreur interne') : 'Erreur interne',
+    ...(isDev && { code: err.code || 'INTERNAL_ERROR' }),
   })
 }

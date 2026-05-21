@@ -5,24 +5,15 @@ import { randomInt } from 'crypto'
 import { supabase } from '../services/supabase'
 import { encrypt, decrypt } from '../services/encryption'
 import { authenticateClient } from '../middleware/authenticateClient'
-import { portalAuthLimiter, aiLimiter } from '../middleware/rate-limit'
+import { loginLimiter, portalAuthLimiter, aiLimiter } from '../middleware/rate-limit'
+import { validate } from '../middleware/validate'
 import { callClaudeChat } from '../services/claude'
 import { parseClaudeResponse } from '../services/templates'
-
-const ALLOWED_CONFIG_TYPES = [
-  'sender_name',
-  'template_onboarding_j0',
-  'template_onboarding_j3',
-  'template_onboarding_j7',
-  'template_failed_payment',
-  'upsell_enabled',
-  'upsell_product_name',
-  'upsell_url',
-  'upsell_price',
-  'support_email_enabled',
-  'support_auto_reply',
-  'politique_remboursement',
-] as const
+import {
+  LoginSchema, PasswordSchema, EmailSchema, ConfigSchema,
+  AutomationSchema, AutomationUpdateSchema, AiGenerateSchema, AiImproveSchema,
+  ALLOWED_CONFIG_TYPES,
+} from '../schemas/client'
 
 export const clientAuthRouter = Router()
 
@@ -33,22 +24,20 @@ const ARGON2_OPTIONS: argon2.Options = {
   parallelism: 1,
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 async function randomDelay() {
   await new Promise(resolve => setTimeout(resolve, randomInt(750, 1501)))
 }
 
 // POST /client/login
-clientAuthRouter.post('/login', portalAuthLimiter, async (req, res) => {
+clientAuthRouter.post('/login', loginLimiter, validate(LoginSchema), async (req, res) => {
   const { email, password } = req.body
-  if (!email || !password) {
-    await randomDelay()
-    return res.status(401).json({ error: 'Identifiants incorrects' })
-  }
 
   const { data: client } = await supabase
     .from('clients')
     .select('id, client_email, password_hash')
-    .eq('client_email', (email as string).toLowerCase())
+    .eq('client_email', email.toLowerCase())
     .single()
 
   if (!client || !client.password_hash) {
@@ -56,7 +45,7 @@ clientAuthRouter.post('/login', portalAuthLimiter, async (req, res) => {
     return res.status(401).json({ error: 'Identifiants incorrects' })
   }
 
-  const valid = await argon2.verify(client.password_hash, password as string)
+  const valid = await argon2.verify(client.password_hash, password)
   if (!valid) {
     await randomDelay()
     return res.status(401).json({ error: 'Identifiants incorrects' })
@@ -91,13 +80,9 @@ clientAuthRouter.get('/me', authenticateClient, async (req, res) => {
 })
 
 // PUT /client/settings/password
-clientAuthRouter.put('/settings/password', authenticateClient, async (req, res) => {
+clientAuthRouter.put('/settings/password', authenticateClient, validate(PasswordSchema), async (req, res) => {
   const clientId = (req as any).clientId
   const { currentPassword, newPassword } = req.body
-
-  if (!currentPassword || !newPassword) {
-    return res.status(400).json({ error: 'Champs requis manquants' })
-  }
 
   const { data, error } = await supabase
     .from('clients')
@@ -107,10 +92,10 @@ clientAuthRouter.put('/settings/password', authenticateClient, async (req, res) 
 
   if (error || !data?.password_hash) return res.status(404).json({ error: 'Client introuvable' })
 
-  const valid = await argon2.verify(data.password_hash, currentPassword as string)
+  const valid = await argon2.verify(data.password_hash, currentPassword)
   if (!valid) return res.status(401).json({ error: 'Mot de passe actuel incorrect' })
 
-  const newHash = await argon2.hash(newPassword as string, ARGON2_OPTIONS)
+  const newHash = await argon2.hash(newPassword, ARGON2_OPTIONS)
 
   const { error: updateError } = await supabase
     .from('clients')
@@ -123,13 +108,9 @@ clientAuthRouter.put('/settings/password', authenticateClient, async (req, res) 
 })
 
 // PUT /client/settings/email
-clientAuthRouter.put('/settings/email', authenticateClient, async (req, res) => {
+clientAuthRouter.put('/settings/email', authenticateClient, validate(EmailSchema), async (req, res) => {
   const clientId = (req as any).clientId
   const { currentPassword, newEmail } = req.body
-
-  if (!currentPassword || !newEmail) {
-    return res.status(400).json({ error: 'Champs requis manquants' })
-  }
 
   const { data, error } = await supabase
     .from('clients')
@@ -139,10 +120,10 @@ clientAuthRouter.put('/settings/email', authenticateClient, async (req, res) => 
 
   if (error || !data?.password_hash) return res.status(404).json({ error: 'Client introuvable' })
 
-  const valid = await argon2.verify(data.password_hash, currentPassword as string)
+  const valid = await argon2.verify(data.password_hash, currentPassword)
   if (!valid) return res.status(401).json({ error: 'Mot de passe actuel incorrect' })
 
-  const normalizedEmail = (newEmail as string).toLowerCase()
+  const normalizedEmail = newEmail.toLowerCase()
 
   const { data: existing } = await supabase
     .from('clients')
@@ -266,9 +247,6 @@ clientAuthRouter.get('/configs', authenticateClient, async (req, res) => {
   res.json(result)
 })
 
-const VALID_EMAIL_TYPES = ['onboarding_j0', 'onboarding_j3', 'onboarding_j7', 'failed_payment'] as const
-type EmailType = typeof VALID_EMAIL_TYPES[number]
-
 const AI_GENERATE_SYSTEM = `Tu es un expert en email marketing pour infopreneurs francophones.
 Génère un email professionnel et chaleureux, maximum 150 mots.
 Utilise les variables {{nom}}, {{prenom}}, {{nom_formation}}, {{lien_acces}} là où c'est pertinent.
@@ -289,15 +267,8 @@ Format de ta réponse (OBLIGATOIRE) :
 Corps de l'email en texte brut.`
 
 // POST /client/ai/generate
-clientAuthRouter.post('/ai/generate', authenticateClient, aiLimiter, async (req, res) => {
+clientAuthRouter.post('/ai/generate', authenticateClient, aiLimiter, validate(AiGenerateSchema), async (req, res) => {
   const { emailType, formationName, tone, objective } = req.body
-
-  if (!emailType || !formationName) {
-    return res.status(400).json({ error: 'emailType et formationName requis' })
-  }
-  if (!(VALID_EMAIL_TYPES as readonly string[]).includes(emailType)) {
-    return res.status(400).json({ error: `emailType invalide. Valeurs : ${VALID_EMAIL_TYPES.join(', ')}` })
-  }
 
   const userMessage = [
     `Type d'email : ${emailType}`,
@@ -316,16 +287,10 @@ clientAuthRouter.post('/ai/generate', authenticateClient, aiLimiter, async (req,
 })
 
 // POST /client/ai/improve
-clientAuthRouter.post('/ai/improve', authenticateClient, aiLimiter, async (req, res) => {
+clientAuthRouter.post('/ai/improve', authenticateClient, aiLimiter, validate(AiImproveSchema), async (req, res) => {
   const { content, emailType } = req.body
 
-  if (!content || typeof content !== 'string') {
-    return res.status(400).json({ error: 'content requis' })
-  }
-
-  const userMessage = emailType
-    ? `Type d'email : ${emailType}\n\n${content}`
-    : content
+  const userMessage = emailType ? `Type d'email : ${emailType}\n\n${content}` : content
 
   try {
     const raw = await callClaudeChat(userMessage, AI_IMPROVE_SYSTEM, 'claude-haiku-4-5-20251001')
@@ -351,25 +316,14 @@ clientAuthRouter.get('/automations/custom', authenticateClient, async (req, res)
   res.json(data ?? [])
 })
 
-const VALID_TRIGGER_TYPES = ['delay_after_purchase', 'specific_date', 'payment_failed', 'manual'] as const
-
 // POST /client/automations/custom
-clientAuthRouter.post('/automations/custom', authenticateClient, async (req, res) => {
+clientAuthRouter.post('/automations/custom', authenticateClient, validate(AutomationSchema), async (req, res) => {
   const clientId = (req as any).clientId
   const { name, trigger_type, trigger_delay_days, trigger_date, subject, body } = req.body
 
-  if (!name || !trigger_type || !subject || !body) {
-    return res.status(400).json({ error: 'name, trigger_type, subject, body requis' })
-  }
-
-  if (!(VALID_TRIGGER_TYPES as readonly string[]).includes(trigger_type)) {
-    return res.status(400).json({ error: `trigger_type invalide. Valeurs : ${VALID_TRIGGER_TYPES.join(', ')}` })
-  }
-
-  if (trigger_type === 'delay_after_purchase' && (trigger_delay_days == null || typeof trigger_delay_days !== 'number')) {
+  if (trigger_type === 'delay_after_purchase' && trigger_delay_days == null) {
     return res.status(400).json({ error: 'trigger_delay_days requis pour delay_after_purchase' })
   }
-
   if (trigger_type === 'specific_date' && !trigger_date) {
     return res.status(400).json({ error: 'trigger_date requis pour specific_date' })
   }
@@ -386,23 +340,15 @@ clientAuthRouter.post('/automations/custom', authenticateClient, async (req, res
 })
 
 // PUT /client/automations/custom/:id
-clientAuthRouter.put('/automations/custom/:id', authenticateClient, async (req, res) => {
+clientAuthRouter.put('/automations/custom/:id', authenticateClient, validate(AutomationUpdateSchema), async (req, res) => {
   const clientId = (req as any).clientId
   const { id } = req.params
-  const { name, trigger_type, trigger_delay_days, trigger_date, subject, body, active } = req.body
 
-  const updates: Record<string, any> = {}
-  if (name !== undefined) updates.name = name
-  if (trigger_type !== undefined) updates.trigger_type = trigger_type
-  if (trigger_delay_days !== undefined) updates.trigger_delay_days = trigger_delay_days
-  if (trigger_date !== undefined) updates.trigger_date = trigger_date
-  if (subject !== undefined) updates.subject = subject
-  if (body !== undefined) updates.body = body
-  if (active !== undefined) updates.active = active
+  if (!UUID_RE.test(String(id))) return res.status(400).json({ error: 'ID invalide' })
 
   const { data, error } = await supabase
     .from('custom_automations')
-    .update(updates)
+    .update(req.body)
     .eq('id', id)
     .eq('client_id', clientId)
     .select()
@@ -419,6 +365,8 @@ clientAuthRouter.delete('/automations/custom/:id', authenticateClient, async (re
   const clientId = (req as any).clientId
   const { id } = req.params
 
+  if (!UUID_RE.test(String(id))) return res.status(400).json({ error: 'ID invalide' })
+
   const { error, count } = await supabase
     .from('custom_automations')
     .delete({ count: 'exact' })
@@ -432,17 +380,9 @@ clientAuthRouter.delete('/automations/custom/:id', authenticateClient, async (re
 })
 
 // PUT /client/configs
-clientAuthRouter.put('/configs', authenticateClient, async (req, res) => {
+clientAuthRouter.put('/configs', authenticateClient, validate(ConfigSchema), async (req, res) => {
   const clientId = (req as any).clientId
   const { config_type, value } = req.body
-
-  if (!config_type || typeof value !== 'string') {
-    return res.status(400).json({ error: 'config_type et value requis' })
-  }
-
-  if (!(ALLOWED_CONFIG_TYPES as readonly string[]).includes(config_type)) {
-    return res.status(400).json({ error: `config_type non autorisé : ${config_type}` })
-  }
 
   const encrypted_value = encrypt(value)
 
