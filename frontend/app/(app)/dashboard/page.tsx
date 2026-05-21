@@ -13,6 +13,7 @@ interface DashboardStats {
 
 interface LogRow {
   id: string
+  client_id: string | null
   action_type: string
   status: string
   created_at: string
@@ -110,7 +111,13 @@ export default function DashboardPage() {
             {recentLogs.map(log => (
               <div key={log.id} className="flex items-center justify-between px-4 py-3 list-row">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">{log.clients?.name ?? '—'}</p>
+                  {log.client_id && log.clients?.name ? (
+                    <Link href={`/clients/${log.client_id}`} className="text-sm font-medium truncate hover:text-primary transition-colors">
+                      {log.clients.name}
+                    </Link>
+                  ) : (
+                    <p className="text-sm font-medium truncate">{log.clients?.name ?? '—'}</p>
+                  )}
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {ACTION_LABELS[log.action_type] ?? log.action_type}
                     {' · '}

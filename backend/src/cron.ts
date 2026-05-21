@@ -4,7 +4,41 @@ import { callClaude } from './services/claude'
 import { sendEmail } from './services/resend'
 import { decrypt } from './services/encryption'
 
+async function recoverStuckTasks(): Promise<void> {
+  const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+  const { data, error } = await supabase
+    .from('pending_tasks')
+    .update({ status: 'pending' })
+    .eq('status', 'processing')
+    .lt('created_at', cutoff)
+    .select('id')
+  if (error) {
+    console.error('[cron] recoverStuckTasks échoué:', error.message)
+    return
+  }
+  if (data && data.length > 0)
+    console.log(`[cron] ${data.length} tâche(s) bloquée(s) en processing → remises en pending`)
+}
+
+async function createTaskForJob(
+  jobId: string, clientId: string, taskType: string,
+  contextJson: Record<string, any>, promptTemplate: string, status: string
+): Promise<string | null> {
+  const { data, error } = await supabase.rpc('create_task_for_job', {
+    p_job_id: jobId,
+    p_client_id: clientId,
+    p_task_type: taskType,
+    p_context_json: contextJson,
+    p_prompt_template: promptTemplate,
+    p_status: status,
+  })
+  if (error) throw new Error(error.message)
+  return data as string | null
+}
+
 export async function runScheduledJobs(): Promise<void> {
+  await recoverStuckTasks()
+
   const { data: jobs } = await supabase
     .from('scheduled_jobs')
     .select('*')
@@ -23,10 +57,13 @@ export async function runScheduledJobs(): Promise<void> {
       }
     } catch (err: any) {
       console.error(`[cron] job ${job.id} échoué:`, err.message)
-      await supabase
-        .from('scheduled_jobs')
-        .update({ status: 'failed' })
-        .eq('id', job.id)
+      await supabase.from('scheduled_jobs').update({ status: 'failed' }).eq('id', job.id)
+      await supabase.from('activity_logs').insert({
+        client_id: job.client_id ?? null,
+        action_type: 'cron_error',
+        payload_json: { job_id: job.id, job_type: job.job_type, error: err.message },
+        status: 'failed',
+      })
     }
   }
 }
@@ -36,20 +73,8 @@ async function handleStandardJob(job: any): Promise<void> {
   const task_type = job.job_type as TaskType
   const prompt_template = getTemplate(task_type, ctx).prompt
 
-  await supabase.from('pending_tasks').insert({
-    client_id: job.client_id,
-    task_type,
-    context_json: ctx,
-    prompt_template,
-    status: 'pending',
-  })
-
-  await supabase
-    .from('scheduled_jobs')
-    .update({ status: 'done' })
-    .eq('id', job.id)
-
-  console.log(`[cron] job ${job.id} (${task_type}) → pending_task créée`)
+  await createTaskForJob(job.id, job.client_id, task_type, ctx, prompt_template, 'pending')
+  console.log(`[cron] job ${job.id} (${task_type}) → pending_task créée (atomique)`)
 }
 
 async function handleUpsellJob(job: any): Promise<void> {
@@ -86,29 +111,13 @@ async function handleUpsellJob(job: any): Promise<void> {
   const prompt_template = buildPromptUpsell(ctx)
 
   if (!isAuto) {
-    await supabase.from('pending_tasks').insert({
-      client_id: job.client_id,
-      task_type: 'upsell',
-      context_json: ctx,
-      prompt_template,
-      status: 'pending',
-    })
-    await supabase.from('scheduled_jobs').update({ status: 'done' }).eq('id', job.id)
-    console.log(`[cron] job ${job.id} (upsell) → pending_task créée (mode manuel)`)
+    await createTaskForJob(job.id, job.client_id, 'upsell', ctx, prompt_template, 'pending')
+    console.log(`[cron] job ${job.id} (upsell) → pending_task créée (mode manuel, atomique)`)
     return
   }
 
-  const { data: task } = await supabase
-    .from('pending_tasks')
-    .insert({
-      client_id: job.client_id,
-      task_type: 'upsell',
-      context_json: ctx,
-      prompt_template,
-      status: 'processing',
-    })
-    .select()
-    .single()
+  // Mode auto : RPC atomique insert processing + job done, puis email
+  const taskId = await createTaskForJob(job.id, job.client_id, 'upsell', ctx, prompt_template, 'processing')
 
   try {
     if (!ctx.customer_email) throw new Error('customer_email manquant')
@@ -125,18 +134,17 @@ async function handleUpsellJob(job: any): Promise<void> {
     await supabase
       .from('pending_tasks')
       .update({ status: 'sent', ai_response: aiResponse, processed_at: new Date().toISOString() })
-      .eq('id', task!.id)
+      .eq('id', taskId)
     await supabase.from('activity_logs').insert({
       client_id: job.client_id,
       action_type: 'upsell_email',
       payload_json: { subject, to: ctx.customer_email, product: ctx.upsell_product_name },
       status: 'sent',
     })
-    await supabase.from('scheduled_jobs').update({ status: 'done' }).eq('id', job.id)
     console.log(`[cron] job ${job.id} (upsell) → email envoyé à ${ctx.customer_email}`)
   } catch (err: any) {
-    if (task) {
-      await supabase.from('pending_tasks').update({ status: 'failed', ai_response: err.message }).eq('id', task.id)
+    if (taskId) {
+      await supabase.from('pending_tasks').update({ status: 'failed', ai_response: err.message }).eq('id', taskId)
     }
     await supabase.from('activity_logs').insert({
       client_id: job.client_id,
@@ -145,6 +153,98 @@ async function handleUpsellJob(job: any): Promise<void> {
       status: 'failed',
     })
     throw err
+  }
+}
+
+export async function runCustomAutomations(): Promise<void> {
+  const now = new Date()
+
+  const { data: automations } = await supabase
+    .from('custom_automations')
+    .select('*')
+    .eq('active', true)
+    .in('trigger_type', ['delay_after_purchase', 'specific_date'])
+
+  if (!automations || automations.length === 0) return
+  console.log(`[cron:custom] ${automations.length} automation(s) à vérifier`)
+
+  const clientIds = [...new Set(automations.map((a: any) => a.client_id as string))]
+
+  const [clientsResult, senderConfigsResult, firedLogsResult] = await Promise.all([
+    supabase.from('clients').select('id, email, name, created_at').in('id', clientIds),
+    supabase.from('client_configs')
+      .select('client_id, encrypted_value')
+      .eq('config_type', 'sender_name')
+      .in('client_id', clientIds),
+    supabase.from('activity_logs')
+      .select('payload_json')
+      .in('client_id', clientIds)
+      .eq('action_type', 'custom_automation')
+      .eq('status', 'sent'),
+  ])
+
+  const clientMap = new Map((clientsResult.data ?? []).map((c: any) => [c.id as string, c]))
+  const senderMap = new Map<string, string>()
+  for (const cfg of senderConfigsResult.data ?? []) {
+    try { senderMap.set(cfg.client_id, decrypt(cfg.encrypted_value)) } catch { /* keep default */ }
+  }
+  const firedIds = new Set(
+    (firedLogsResult.data ?? []).map((l: any) => (l.payload_json as any)?.automation_id).filter(Boolean)
+  )
+
+  for (const automation of automations) {
+    const client = clientMap.get(automation.client_id)
+    if (!client) continue
+
+    let shouldFire = false
+    if (automation.trigger_type === 'specific_date') {
+      shouldFire = automation.trigger_date != null && new Date(automation.trigger_date) <= now
+    } else if (automation.trigger_type === 'delay_after_purchase') {
+      const fireAt = new Date(client.created_at)
+      fireAt.setDate(fireAt.getDate() + (automation.trigger_delay_days ?? 0))
+      shouldFire = fireAt <= now
+    }
+
+    if (!shouldFire || firedIds.has(automation.id)) continue
+
+    try {
+      const senderName = senderMap.get(automation.client_id) ?? client.name
+      const html = wrapEmailHtml(automation.body.replace(/\n/g, '<br>'), senderName)
+      await sendEmail({ to: client.email, subject: automation.subject, html, sender_name: senderName })
+
+      await supabase.from('activity_logs').insert({
+        client_id: automation.client_id,
+        action_type: 'custom_automation',
+        payload_json: { automation_id: automation.id, name: automation.name, to: client.email, subject: automation.subject },
+        status: 'sent',
+      })
+
+      if (automation.trigger_type === 'specific_date') {
+        await supabase.from('custom_automations').update({ active: false }).eq('id', automation.id)
+      }
+
+      console.log(`[cron:custom] "${automation.name}" → email envoyé à ${client.email}`)
+    } catch (err: any) {
+      console.error(`[cron:custom] automation ${automation.id} échoué:`, err.message)
+      await supabase.from('activity_logs').insert({
+        client_id: automation.client_id,
+        action_type: 'custom_automation',
+        payload_json: { automation_id: automation.id, name: automation.name, error: err.message },
+        status: 'failed',
+      })
+      await supabase.from('pending_tasks').insert({
+        client_id: automation.client_id,
+        task_type: 'custom_automation',
+        context_json: {
+          automation_id: automation.id,
+          automation_name: automation.name,
+          customer_email: client.email,
+          subject: automation.subject,
+        },
+        ai_response: automation.body,
+        status: 'failed',
+      })
+    }
   }
 }
 

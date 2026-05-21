@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { supabase } from '../services/supabase'
 import { encrypt, decrypt } from '../services/encryption'
 import { requireAuth } from '../middleware/auth'
+import { generateClientCredentials } from '../utils/generateClientCredentials'
 
 export const clientsRouter = Router()
 clientsRouter.use(requireAuth)
@@ -73,6 +74,12 @@ clientsRouter.post('/', async (req, res) => {
   if (configError) {
     await supabase.from('clients').delete().eq('id', client.id)
     return res.status(500).json({ error: configError.message })
+  }
+
+  try {
+    await generateClientCredentials(client.id, email)
+  } catch (err: any) {
+    console.error(`[clients] generateClientCredentials failed for ${client.id}:`, err.message)
   }
 
   res.status(201).json(client)

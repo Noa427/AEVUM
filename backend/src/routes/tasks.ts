@@ -50,9 +50,9 @@ tasksRouter.post('/:id/preview', async (req, res) => {
       aiResponse = await callClaude(task.prompt_template, 'claude-sonnet-4-6')
       await supabase.from('pending_tasks').update({ ai_response: aiResponse }).eq('id', task.id)
     } else {
-      const { ai_response } = req.body
-      if (!ai_response) return res.status(400).json({ error: 'ai_response requis en mode manuel' })
-      aiResponse = ai_response as string
+      const provided = (req.body.ai_response as string) || task.ai_response
+      if (!provided) return res.status(400).json({ error: 'ai_response requis en mode manuel' })
+      aiResponse = provided
     }
     const parsed = parseClaudeResponse(aiResponse)
     res.json(parsed)
@@ -78,7 +78,9 @@ tasksRouter.post('/:id/send', async (req, res) => {
     .eq('client_id', task.client_id)
 
   const configMap: Record<string, string> = {}
-  for (const c of configs ?? []) configMap[c.config_type] = decrypt(c.encrypted_value)
+  for (const c of configs ?? []) {
+    try { configMap[c.config_type] = decrypt(c.encrypted_value) } catch { /* skip malformed */ }
+  }
   const sender_name = configMap['sender_name'] || 'Formateur'
 
   const ctx = task.context_json as Record<string, any>

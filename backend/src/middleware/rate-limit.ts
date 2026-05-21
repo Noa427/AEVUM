@@ -41,3 +41,13 @@ export const portalAuthLimiter = rateLimit({
   legacyHeaders: false,
   message: msg('Trop de tentatives d\'authentification, réessayez dans une minute.'),
 })
+
+export const aiLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 10,
+  keyGenerator: (req) => `ai:${(req as any).clientId}`,
+  validate: { ip: false },
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: msg('Trop de requêtes IA, réessayez dans une minute.'),
+})

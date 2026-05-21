@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "seed:test": "tsx scripts/seed-test-client.ts",
+    "simulate": "tsx scripts/simulate-webhook.ts"
   },
   "keywords": [],
   "author": "",
@@ -15,10 +17,13 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.2",
     "@supabase/supabase-js": "^2.105.4",
+    "@types/jsonwebtoken": "^9.0.10",
+    "argon2": "^0.44.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
+    "jsonwebtoken": "^9.0.3",
     "resend": "^6.12.3",
     "stripe": "^22.1.1"
   },

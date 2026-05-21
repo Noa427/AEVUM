@@ -10,9 +10,10 @@ import { historyRouter } from './routes/history'
 import { simulateRouter } from './routes/simulate'
 import { portalRouter } from './routes/portal'
 import { supportRouter } from './routes/support'
+import { clientAuthRouter } from './routes/clientAuth'
 import { errorHandler } from './middleware/error-handler'
 import { apiLimiter, webhookLimiter, simulateLimiter, portalLimiter } from './middleware/rate-limit'
-import { runScheduledJobs } from './cron'
+import { runScheduledJobs, runCustomAutomations } from './cron'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -42,6 +43,9 @@ app.use('/api/simulate', simulateLimiter, simulateRouter)
 // Routes portail client (site vitrine)
 app.use('/api/portal', portalCors, portalLimiter, portalRouter)
 
+// Auth client — portalAuthLimiter (5/min) appliqué sur /client/login dans le router
+app.use('/client', portalCors, clientAuthRouter)
+
 // Routes support IA (admin-protected)
 app.use('/api/support', adminCors, apiLimiter, supportRouter)
 
@@ -51,6 +55,8 @@ app.listen(PORT, () => {
   console.log(`Backend démarré sur le port ${PORT}`)
   if (process.env.ENABLE_CRON === 'true') {
     runScheduledJobs()
+    runCustomAutomations()
     setInterval(runScheduledJobs, 60 * 60 * 1000)
+    setInterval(runCustomAutomations, 60 * 60 * 1000)
   }
 })

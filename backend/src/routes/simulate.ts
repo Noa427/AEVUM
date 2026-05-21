@@ -20,7 +20,9 @@ simulateRouter.post('/', async (req, res) => {
     .eq('client_id', client_id)
 
   const configMap: Record<string, string> = {}
-  for (const c of configs ?? []) configMap[c.config_type] = decrypt(c.encrypted_value)
+  for (const c of configs ?? []) {
+    try { configMap[c.config_type] = decrypt(c.encrypted_value) } catch { /* skip malformed */ }
+  }
   const sender_name = configMap['sender_name'] || 'Formateur'
 
   let task_type: string

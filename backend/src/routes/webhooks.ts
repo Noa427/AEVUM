@@ -5,6 +5,7 @@ import { buildPromptFailedPayment, getTemplate, parseClaudeResponse, wrapEmailHt
 import { callClaude } from '../services/claude'
 import { sendEmail } from '../services/resend'
 import { verifyStripeSignature } from '../middleware/stripe-sig'
+import { getEmailTemplate, templateToAiResponse } from '../utils/getEmailTemplate'
 
 export const webhooksRouter = Router()
 
@@ -26,7 +27,9 @@ webhooksRouter.post('/:clientId', verifyStripeSignature, async (req, res) => {
     .eq('client_id', clientId)
 
   const configMap: Record<string, string> = {}
-  for (const c of configs ?? []) configMap[c.config_type] = decrypt(c.encrypted_value)
+  for (const c of configs ?? []) {
+    try { configMap[c.config_type] = decrypt(c.encrypted_value) } catch { /* skip malformed */ }
+  }
   const sender_name = configMap['sender_name'] || 'Formateur'
 
   const isAuto = (client as any)?.auto_mode ?? true
@@ -79,11 +82,19 @@ async function handleFailedPayment(opts: {
   const prompt_template = buildPromptFailedPayment({ ...context_json, sender_name })
 
   if (!isAuto) {
+    const tpl = await getEmailTemplate(clientId, 'template_failed_payment', {
+      nom: context_json.customer_name ?? context_json.student_name ?? '',
+      prenom: context_json.student_name ?? '',
+      email: context_json.customer_email ?? '',
+      nom_formation: context_json.product_name ?? '',
+      lien_acces: context_json.hosted_invoice_url ?? context_json.payment_link ?? '',
+    })
     await supabase.from('pending_tasks').insert({
       client_id: clientId,
       task_type: 'failed_payment',
       context_json: { ...context_json, sender_name },
       prompt_template,
+      ai_response: templateToAiResponse(tpl),
       status: 'pending',
     })
     return
@@ -156,17 +167,33 @@ async function handleCheckoutCompleted(opts: {
 
   const { prompt } = getTemplate('onboarding_j0', context_json)
 
-  const { data: task } = await supabase
+  const manualAiResponse = isAuto ? undefined : templateToAiResponse(
+    await getEmailTemplate(clientId, 'template_onboarding_j0', {
+      nom: context_json.customer_name ?? context_json.student_name ?? '',
+      prenom: context_json.student_name ?? '',
+      email: context_json.customer_email ?? '',
+      nom_formation: context_json.product_name ?? '',
+      lien_acces: '',
+    })
+  )
+
+  const { data: task, error: taskError } = await supabase
     .from('pending_tasks')
     .insert({
       client_id: clientId,
       task_type: 'onboarding_j0',
       context_json,
       prompt_template: prompt,
+      ai_response: manualAiResponse,
       status: isAuto ? 'processing' : 'pending',
     })
     .select()
     .single()
+
+  if (taskError) {
+    console.error('[webhook] pending_task onboarding_j0 insert échoué:', taskError.message)
+    return
+  }
 
   const now = new Date()
   const j3 = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000)

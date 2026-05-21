@@ -122,26 +122,47 @@ Backend : http://localhost:3001
 
 ### Backend (`backend/.env`)
 
+| Variable | Obligatoire | Description |
+|----------|-------------|-------------|
+| `SUPABASE_URL` | ✓ | URL du projet Supabase |
+| `SUPABASE_ANON_KEY` | ✓ | Clé anon Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | ✓ | Clé service role Supabase (accès admin) |
+| `RESEND_API_KEY` | ✓ | Clé API Resend |
+| `RESEND_FROM_DOMAIN` | ✓ | Adresse email expéditeur (ex: `contact@mondomaine.fr`) |
+| `ENCRYPTION_KEY` | ✓ | Clé AES-256 pour chiffrement configs clients (32 chars hex) |
+| `ADMIN_SECRET` | ✓ | Secret pour les routes admin (requireAuth) |
+| `JWT_SECRET` | ✓ | Secret JWT portail client (partager avec la Vitrine) |
+| `FRONTEND_URL` | ✓ | URL du frontend admin pour CORS |
+| `VITRINE_URL` | ✓ | URL de la Vitrine Astro (CORS portail + lien email credentials) |
+| `STRIPE_SECRET_KEY` | — | Clé secrète Stripe (si vérification côté SDK) |
+| `ANTHROPIC_API_KEY` | — | Si absent, clé lue depuis la table settings Supabase |
+| `ENABLE_CRON` | — | `true` pour activer le cron au démarrage (Render : définir aussi en env var) |
+| `PORT` | — | Port Express (défaut : 3001) |
+
+### Vitrine Astro (`AEVUM/Vitrine/.env`)
+
 | Variable | Description |
 |----------|-------------|
-| `SUPABASE_URL` | URL du projet Supabase |
-| `SUPABASE_ANON_KEY` | Clé anon Supabase |
-| `SUPABASE_SERVICE_ROLE_KEY` | Clé service role Supabase (accès admin) |
-| `RESEND_API_KEY` | Clé API Resend |
-| `RESEND_FROM_DOMAIN` | Adresse email expéditeur (ex: `contact@mondomaine.fr`) |
-| `ENCRYPTION_KEY` | Clé AES-256 pour chiffrement configs clients (32 chars hex) |
-| `STRIPE_SECRET_KEY` | Clé secrète Stripe (`sk_live_...` ou `sk_test_...`) |
-| `FRONTEND_URL` | URL du frontend pour CORS (ex: `https://monapp.vercel.app`) |
-| `PORT` | Port du serveur (défaut: 3001) |
-| `ENABLE_CRON` | `true` pour activer le cron interne (sinon utiliser le cron Render) |
+| `AEVUM_URL` | URL du backend (ex: `https://backend.onrender.com` en prod, `http://localhost:3001` en dev) |
+| `JWT_SECRET` | Même valeur que le backend |
 
-### Frontend (`frontend/.env.local`)
+### Frontend admin (`frontend/.env.local`)
 
 | Variable | Description |
 |----------|-------------|
 | `NEXT_PUBLIC_SUPABASE_URL` | URL du projet Supabase |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Clé anon Supabase |
 | `NEXT_PUBLIC_API_URL` | URL du backend (ex: `https://automatepro-backend.onrender.com`) |
+
+## Commandes backend
+
+```bash
+cd backend
+npm run dev          # tsx watch — rechargement à chaud
+npm run build        # tsc → dist/
+npm run start        # node dist/index.js (prod)
+npm run seed:test    # insérer un client de test + envoyer ses credentials par email
+```
 
 ## Déploiement
 

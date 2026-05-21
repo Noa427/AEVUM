@@ -229,17 +229,6 @@ export function buildPromptUpsell(ctx: Record<string, any>): string {
   ].filter(Boolean).join('\n')
 }
 
-// Alias pour compatibilité avec code existant qui importe buildPrompt
-export function buildPrompt(params: {
-  sender_name: string
-  amount: number
-  payment_link: string
-  student_name?: string
-  product_name?: string
-}): string {
-  return buildPromptFailedPayment({ ...params, hosted_invoice_url: params.payment_link })
-}
-
 export function parseClaudeResponse(response: string): { subject: string; body_html: string } {
   const trimmed = response.trim()
 
