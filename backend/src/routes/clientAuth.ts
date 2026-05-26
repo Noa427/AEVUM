@@ -5,7 +5,7 @@ import { randomInt } from 'crypto'
 import { supabase } from '../services/supabase'
 import { encrypt, decrypt } from '../services/encryption'
 import { authenticateClient } from '../middleware/authenticateClient'
-import { loginLimiter, portalAuthLimiter, aiLimiter, forgotPasswordLimiter } from '../middleware/rate-limit'
+import { loginLimiter, portalAuthLimiter, aiLimiter, forgotPasswordLimiter, portalLimiter } from '../middleware/rate-limit'
 import { validate } from '../middleware/validate'
 import { callClaudeChat } from '../services/claude'
 import { parseClaudeResponse, wrapEmailHtml } from '../services/templates'
@@ -494,7 +494,7 @@ const TEST_VARS: Record<string, string> = {
 }
 
 // POST /client/test-send
-clientAuthRouter.post('/test-send', authenticateClient, validate(TestSendSchema), async (req, res) => {
+clientAuthRouter.post('/test-send', authenticateClient, portalLimiter, validate(TestSendSchema), async (req, res) => {
   const clientId = (req as any).clientId as string
   const clientEmail = (req as any).clientEmail as string
   const { config_type } = req.body
@@ -521,12 +521,13 @@ clientAuthRouter.post('/test-send', authenticateClient, validate(TestSendSchema)
       sender_name: senderName,
     })
 
-    await supabase.from('activity_logs').insert({
+    const { error: logError } = await supabase.from('activity_logs').insert({
       client_id: clientId,
       action_type: 'test_email_sent',
       payload_json: { config_type, to: clientEmail },
       status: 'sent',
     })
+    if (logError) console.warn('[test-send] activity log insert failed:', logError.message)
 
     res.json({ success: true, message: `Email de test envoyé à ${clientEmail}` })
   } catch (err: any) {
