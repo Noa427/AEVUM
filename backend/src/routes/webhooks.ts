@@ -17,7 +17,7 @@ webhooksRouter.post('/:clientId', verifyStripeSignature, async (req, res) => {
 
   const { data: client } = await supabase
     .from('clients')
-    .select('email, auto_mode')
+    .select('email, auto_mode, paused_until')
     .eq('id', clientId)
     .single()
 
@@ -34,10 +34,24 @@ webhooksRouter.post('/:clientId', verifyStripeSignature, async (req, res) => {
 
   const isAuto = (client as any)?.auto_mode ?? true
 
+  const pausedUntil = (client as any)?.paused_until
+  if (pausedUntil && new Date() < new Date(pausedUntil)) {
+    await supabase.from('activity_logs').insert({
+      client_id: clientId,
+      action_type: 'webhook_skipped',
+      payload_json: {
+        event_type: event.type,
+        reason: `Envoi ignoré — compte en pause jusqu'au ${new Date(pausedUntil).toLocaleDateString('fr-FR')}`,
+      },
+      status: 'skipped',
+    })
+    return
+  }
+
   if (event.type === 'payment_intent.payment_failed' || event.type === 'invoice.payment_failed') {
-    await handleFailedPayment({ event, clientId, client, sender_name, isAuto })
+    await handleFailedPayment({ event, clientId, client, sender_name, isAuto, configMap })
   } else if (event.type === 'checkout.session.completed') {
-    await handleCheckoutCompleted({ event, clientId, client, sender_name, isAuto })
+    await handleCheckoutCompleted({ event, clientId, client, sender_name, isAuto, configMap })
   }
 })
 
@@ -47,8 +61,14 @@ async function handleFailedPayment(opts: {
   client: { email: string } | null
   sender_name: string
   isAuto: boolean
+  configMap: Record<string, string>
 }) {
-  const { event, clientId, client, sender_name, isAuto } = opts
+  const { event, clientId, client, sender_name, isAuto, configMap } = opts
+
+  const fpConfigRaw = configMap['template_failed_payment_j1']
+  if (fpConfigRaw) {
+    try { if (JSON.parse(fpConfigRaw).active === false) return } catch {}
+  }
   let context_json: Record<string, any>
 
   if (event.type === 'invoice.payment_failed') {
@@ -81,14 +101,20 @@ async function handleFailedPayment(opts: {
 
   const prompt_template = buildPromptFailedPayment({ ...context_json, sender_name })
 
+  const tplVars = {
+    nom: context_json.customer_name ?? context_json.student_name ?? '',
+    prenom: context_json.student_name ?? '',
+    email: context_json.customer_email ?? '',
+    nom_formation: context_json.product_name ?? '',
+    lien_acces: context_json.hosted_invoice_url ?? context_json.payment_link ?? '',
+  }
+
+  const now = new Date()
+  const j3At = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000)
+  const j7At = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+
   if (!isAuto) {
-    const tpl = await getEmailTemplate(clientId, 'template_failed_payment', {
-      nom: context_json.customer_name ?? context_json.student_name ?? '',
-      prenom: context_json.student_name ?? '',
-      email: context_json.customer_email ?? '',
-      nom_formation: context_json.product_name ?? '',
-      lien_acces: context_json.hosted_invoice_url ?? context_json.payment_link ?? '',
-    })
+    const tpl = await getEmailTemplate(clientId, 'template_failed_payment_j1', tplVars)
     await supabase.from('pending_tasks').insert({
       client_id: clientId,
       task_type: 'failed_payment',
@@ -97,6 +123,10 @@ async function handleFailedPayment(opts: {
       ai_response: templateToAiResponse(tpl),
       status: 'pending',
     })
+    await supabase.from('scheduled_jobs').insert([
+      { client_id: clientId, job_type: 'failed_payment_j3', context_json: { ...context_json, sender_name }, scheduled_for: j3At.toISOString(), status: 'pending' },
+      { client_id: clientId, job_type: 'failed_payment_j7', context_json: { ...context_json, sender_name }, scheduled_for: j7At.toISOString(), status: 'pending' },
+    ])
     return
   }
 
@@ -113,6 +143,11 @@ async function handleFailedPayment(opts: {
     .single()
 
   if (!task) return
+
+  await supabase.from('scheduled_jobs').insert([
+    { client_id: clientId, job_type: 'failed_payment_j3', context_json: { ...context_json, sender_name }, scheduled_for: j3At.toISOString(), status: 'pending' },
+    { client_id: clientId, job_type: 'failed_payment_j7', context_json: { ...context_json, sender_name }, scheduled_for: j7At.toISOString(), status: 'pending' },
+  ])
 
   try {
     if (!context_json.customer_email) throw new Error('customer_email manquant')
@@ -150,8 +185,9 @@ async function handleCheckoutCompleted(opts: {
   client: { email: string } | null
   sender_name: string
   isAuto: boolean
+  configMap: Record<string, string>
 }) {
-  const { event, clientId, client, sender_name, isAuto } = opts
+  const { event, clientId, client, sender_name, isAuto, configMap } = opts
   const session = event.data.object as any
 
   const context_json = {
@@ -163,6 +199,27 @@ async function handleCheckoutCompleted(opts: {
     student_name: session.metadata?.student_name ?? session.customer_details?.name,
     payment_intent_id: typeof session.payment_intent === 'string' ? session.payment_intent : (session.payment_intent as any)?.id,
     sender_name,
+  }
+
+  const now = new Date()
+  const j3At  = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000)
+  const j7At  = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+  const j30At = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+  const followupJobs = [
+    { client_id: clientId, job_type: 'onboarding_j3', context_json, scheduled_for: j3At.toISOString(),  status: 'pending' },
+    { client_id: clientId, job_type: 'onboarding_j7', context_json, scheduled_for: j7At.toISOString(),  status: 'pending' },
+    { client_id: clientId, job_type: 'upsell',        context_json, scheduled_for: j30At.toISOString(), status: 'pending' },
+  ]
+
+  const j0ConfigRaw = configMap['template_onboarding_j0']
+  let j0Active = true
+  if (j0ConfigRaw) {
+    try { if (JSON.parse(j0ConfigRaw).active === false) j0Active = false } catch {}
+  }
+
+  if (!j0Active) {
+    await supabase.from('scheduled_jobs').insert(followupJobs)
+    return
   }
 
   const { prompt } = getTemplate('onboarding_j0', context_json)
@@ -195,35 +252,7 @@ async function handleCheckoutCompleted(opts: {
     return
   }
 
-  const now = new Date()
-  const j3 = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000)
-  const j7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
-
-  const j30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
-
-  await supabase.from('scheduled_jobs').insert([
-    {
-      client_id: clientId,
-      job_type: 'onboarding_j3',
-      context_json,
-      scheduled_for: j3.toISOString(),
-      status: 'pending',
-    },
-    {
-      client_id: clientId,
-      job_type: 'onboarding_j7',
-      context_json,
-      scheduled_for: j7.toISOString(),
-      status: 'pending',
-    },
-    {
-      client_id: clientId,
-      job_type: 'upsell',
-      context_json,
-      scheduled_for: j30.toISOString(),
-      status: 'pending',
-    },
-  ])
+  await supabase.from('scheduled_jobs').insert(followupJobs)
 
   if (!isAuto || !task) return
 

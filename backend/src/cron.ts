@@ -48,7 +48,31 @@ export async function runScheduledJobs(): Promise<void> {
   if (!jobs || jobs.length === 0) return
   console.log(`[cron] ${jobs.length} job(s) à traiter`)
 
+  const { data: pausedRows } = await supabase
+    .from('clients')
+    .select('id, paused_until')
+    .not('paused_until', 'is', null)
+    .gt('paused_until', new Date().toISOString())
+
+  const pausedMap = new Map<string, string>(
+    (pausedRows ?? []).map((c: any) => [c.id as string, c.paused_until as string])
+  )
+
   for (const job of jobs) {
+    const jobPausedUntil = pausedMap.get(job.client_id)
+    if (jobPausedUntil) {
+      await supabase.from('scheduled_jobs').update({ status: 'done' }).eq('id', job.id)
+      await supabase.from('activity_logs').insert({
+        client_id: job.client_id,
+        action_type: 'job_skipped',
+        payload_json: {
+          job_type: job.job_type,
+          reason: `Envoi ignoré — compte en pause jusqu'au ${new Date(jobPausedUntil).toLocaleDateString('fr-FR')}`,
+        },
+        status: 'skipped',
+      })
+      continue
+    }
     try {
       if (job.job_type === 'upsell') {
         await handleUpsellJob(job)
@@ -71,8 +95,27 @@ export async function runScheduledJobs(): Promise<void> {
 async function handleStandardJob(job: any): Promise<void> {
   const ctx = job.context_json as Record<string, any>
   const task_type = job.job_type as TaskType
-  const prompt_template = getTemplate(task_type, ctx).prompt
 
+  if (typeof job.job_type === 'string' && (job.job_type.startsWith('onboarding_') || job.job_type.startsWith('failed_payment_j'))) {
+    const { data: configRow } = await supabase
+      .from('client_configs')
+      .select('encrypted_value')
+      .eq('client_id', job.client_id)
+      .eq('config_type', `template_${job.job_type}`)
+      .single()
+    if (configRow?.encrypted_value) {
+      try {
+        const config = JSON.parse(decrypt(configRow.encrypted_value))
+        if (config.active === false) {
+          await supabase.from('scheduled_jobs').update({ status: 'done' }).eq('id', job.id)
+          console.log(`[cron] job ${job.id} (${task_type}) ignoré — template inactif`)
+          return
+        }
+      } catch { /* JSON invalide, on continue */ }
+    }
+  }
+
+  const prompt_template = getTemplate(task_type, ctx).prompt
   await createTaskForJob(job.id, job.client_id, task_type, ctx, prompt_template, 'pending')
   console.log(`[cron] job ${job.id} (${task_type}) → pending_task créée (atomique)`)
 }
@@ -171,7 +214,7 @@ export async function runCustomAutomations(): Promise<void> {
   const clientIds = [...new Set(automations.map((a: any) => a.client_id as string))]
 
   const [clientsResult, senderConfigsResult, firedLogsResult] = await Promise.all([
-    supabase.from('clients').select('id, email, name, created_at').in('id', clientIds),
+    supabase.from('clients').select('id, email, name, created_at, paused_until').in('id', clientIds),
     supabase.from('client_configs')
       .select('client_id, encrypted_value')
       .eq('config_type', 'sender_name')
@@ -188,6 +231,12 @@ export async function runCustomAutomations(): Promise<void> {
   for (const cfg of senderConfigsResult.data ?? []) {
     try { senderMap.set(cfg.client_id, decrypt(cfg.encrypted_value)) } catch { /* keep default */ }
   }
+  const pausedAutomationMap = new Map<string, string>()
+  for (const c of clientsResult.data ?? []) {
+    if ((c as any).paused_until && new Date() < new Date((c as any).paused_until)) {
+      pausedAutomationMap.set(c.id, (c as any).paused_until)
+    }
+  }
   const firedIds = new Set(
     (firedLogsResult.data ?? []).map((l: any) => (l.payload_json as any)?.automation_id).filter(Boolean)
   )
@@ -195,6 +244,20 @@ export async function runCustomAutomations(): Promise<void> {
   for (const automation of automations) {
     const client = clientMap.get(automation.client_id)
     if (!client) continue
+
+    const autoPausedUntil = pausedAutomationMap.get(automation.client_id)
+    if (autoPausedUntil) {
+      await supabase.from('activity_logs').insert({
+        client_id: automation.client_id,
+        action_type: 'automation_skipped',
+        payload_json: {
+          automation_id: automation.id,
+          reason: `Envoi ignoré — compte en pause jusqu'au ${new Date(autoPausedUntil).toLocaleDateString('fr-FR')}`,
+        },
+        status: 'skipped',
+      })
+      continue
+    }
 
     let shouldFire = false
     if (automation.trigger_type === 'specific_date') {
@@ -254,7 +317,7 @@ export async function sendWeeklyReport(): Promise<void> {
 
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
-  const { data: clients } = await supabase.from('clients').select('id, name, email')
+  const { data: clients } = await supabase.from('clients').select('id, name, email, paused_until')
   if (!clients || clients.length === 0) return
 
   const TYPE_LABELS: Record<string, string> = {
@@ -269,6 +332,10 @@ export async function sendWeeklyReport(): Promise<void> {
   }
 
   for (const client of clients) {
+    if ((client as any).paused_until && new Date() < new Date((client as any).paused_until)) {
+      console.log(`[cron] rapport hebdo ignoré pour ${client.name} — compte en pause`)
+      continue
+    }
     const { data: logs } = await supabase
       .from('activity_logs')
       .select('action_type')
