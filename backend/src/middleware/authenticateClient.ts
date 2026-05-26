@@ -13,6 +13,7 @@ export function authenticateClient(req: Request, res: Response, next: NextFuncti
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET!) as ClientJwtPayload
     ;(req as any).clientId = payload.clientId
+    ;(req as any).clientEmail = payload.email
     next()
   } catch {
     return res.status(401).json({ error: 'Non autorisé' })
