@@ -5,14 +5,17 @@ import { randomInt } from 'crypto'
 import { supabase } from '../services/supabase'
 import { encrypt, decrypt } from '../services/encryption'
 import { authenticateClient } from '../middleware/authenticateClient'
-import { loginLimiter, portalAuthLimiter, aiLimiter } from '../middleware/rate-limit'
+import { loginLimiter, portalAuthLimiter, aiLimiter, forgotPasswordLimiter } from '../middleware/rate-limit'
 import { validate } from '../middleware/validate'
 import { callClaudeChat } from '../services/claude'
-import { parseClaudeResponse } from '../services/templates'
+import { parseClaudeResponse, wrapEmailHtml } from '../services/templates'
+import { sendEmail } from '../services/resend'
+import { getEmailTemplate } from '../utils/getEmailTemplate'
 import {
   LoginSchema, PasswordSchema, EmailSchema, ConfigSchema,
   AutomationSchema, AutomationUpdateSchema, AiGenerateSchema, AiImproveSchema,
-  ALLOWED_CONFIG_TYPES,
+  ForgotPasswordSchema, ResetPasswordSchema,
+  ALLOWED_CONFIG_TYPES, TestSendSchema, TEMPLATE_CONFIG_TYPES,
 } from '../schemas/client'
 
 export const clientAuthRouter = Router()
@@ -58,6 +61,90 @@ clientAuthRouter.post('/login', loginLimiter, validate(LoginSchema), async (req,
   )
 
   res.json({ token })
+})
+
+// POST /client/forgot-password
+clientAuthRouter.post('/forgot-password', forgotPasswordLimiter, validate(ForgotPasswordSchema), async (req, res) => {
+  const { email } = req.body
+
+  const { data: client } = await supabase
+    .from('clients')
+    .select('id, password_hash')
+    .eq('client_email', email.toLowerCase())
+    .single()
+
+  // Toujours 200 — pas d'énumération d'emails
+  if (!client?.password_hash) {
+    await randomDelay()
+    return res.json({ ok: true })
+  }
+
+  const token = jwt.sign(
+    {
+      purpose: 'password_reset',
+      clientId: client.id,
+      pwdFingerprint: client.password_hash.slice(-8),
+    },
+    process.env.JWT_SECRET!,
+    { expiresIn: '1h' }
+  )
+
+  const resetUrl = `${process.env.VITRINE_URL}/client/reset-password?token=${token}`
+
+  await sendEmail({
+    to: email,
+    subject: 'Réinitialisation de votre mot de passe AEVUM',
+    html: `
+      <p>Bonjour,</p>
+      <p>Vous avez demandé la réinitialisation de votre mot de passe.</p>
+      <p><a href="${resetUrl}">Réinitialiser mon mot de passe</a></p>
+      <p>Ce lien expire dans 1 heure. Si vous n'avez pas fait cette demande, ignorez cet email.</p>
+    `,
+  })
+
+  res.json({ ok: true })
+})
+
+// POST /client/reset-password
+clientAuthRouter.post('/reset-password', validate(ResetPasswordSchema), async (req, res) => {
+  const { token, newPassword } = req.body
+
+  let payload: any
+  try {
+    payload = jwt.verify(token, process.env.JWT_SECRET!)
+  } catch {
+    return res.status(400).json({ error: 'Lien invalide ou expiré' })
+  }
+
+  if (payload.purpose !== 'password_reset') {
+    return res.status(400).json({ error: 'Lien invalide ou expiré' })
+  }
+
+  const { data: client } = await supabase
+    .from('clients')
+    .select('id, password_hash')
+    .eq('id', payload.clientId)
+    .single()
+
+  if (!client?.password_hash) {
+    return res.status(400).json({ error: 'Lien invalide ou expiré' })
+  }
+
+  // Auto-invalide si le mot de passe a déjà été changé
+  if (client.password_hash.slice(-8) !== payload.pwdFingerprint) {
+    return res.status(400).json({ error: 'Lien invalide ou expiré' })
+  }
+
+  const newHash = await argon2.hash(newPassword, ARGON2_OPTIONS)
+
+  const { error: updateError } = await supabase
+    .from('clients')
+    .update({ password_hash: newHash, must_change_password: false })
+    .eq('id', client.id)
+
+  if (updateError) return res.status(500).json({ error: updateError.message })
+
+  res.json({ ok: true })
 })
 
 // GET /client/me
@@ -393,4 +480,56 @@ clientAuthRouter.put('/configs', authenticateClient, validate(ConfigSchema), asy
   if (error) return res.status(500).json({ error: error.message })
 
   res.json({ success: true })
+})
+
+const TEST_VARS: Record<string, string> = {
+  nom: 'Marie',
+  prenom: 'Dupont',
+  email: 'marie.dupont@exemple.com',
+  nom_formation: 'Formation Excel Pro',
+  lien_acces: 'https://exemple.com/acces',
+  mot_de_passe: 'MotDeP4sse!',
+  montant: '97',
+  lien_paiement: 'https://stripe.com/pay/exemple',
+}
+
+// POST /client/test-send
+clientAuthRouter.post('/test-send', authenticateClient, validate(TestSendSchema), async (req, res) => {
+  const clientId = (req as any).clientId as string
+  const clientEmail = (req as any).clientEmail as string
+  const { config_type } = req.body
+
+  try {
+    const { data: senderRow } = await supabase
+      .from('client_configs')
+      .select('encrypted_value')
+      .eq('client_id', clientId)
+      .eq('config_type', 'sender_name')
+      .single()
+
+    const senderName = senderRow?.encrypted_value
+      ? (() => { try { return decrypt(senderRow.encrypted_value) } catch { return 'Test' } })()
+      : 'Test'
+
+    const tpl = await getEmailTemplate(clientId, config_type as any, TEST_VARS)
+    const html = wrapEmailHtml(tpl.body.replace(/\n/g, '<br>'), senderName)
+
+    await sendEmail({
+      to: clientEmail,
+      subject: `[TEST] ${tpl.subject}`,
+      html,
+      sender_name: senderName,
+    })
+
+    await supabase.from('activity_logs').insert({
+      client_id: clientId,
+      action_type: 'test_email_sent',
+      payload_json: { config_type, to: clientEmail },
+      status: 'sent',
+    })
+
+    res.json({ success: true, message: `Email de test envoyé à ${clientEmail}` })
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message })
+  }
 })
