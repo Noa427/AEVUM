@@ -16,6 +16,7 @@ import {
   AutomationSchema, AutomationUpdateSchema, AiGenerateSchema, AiImproveSchema,
   ForgotPasswordSchema, ResetPasswordSchema,
   ALLOWED_CONFIG_TYPES, TestSendSchema, TEMPLATE_CONFIG_TYPES,
+  PauseSchema,
 } from '../schemas/client'
 
 export const clientAuthRouter = Router()
@@ -153,7 +154,7 @@ clientAuthRouter.get('/me', authenticateClient, async (req, res) => {
 
   const { data, error } = await supabase
     .from('clients')
-    .select('client_email, must_change_password, created_at')
+    .select('client_email, must_change_password, created_at, paused_until')
     .eq('id', clientId)
     .single()
 
@@ -163,6 +164,7 @@ clientAuthRouter.get('/me', authenticateClient, async (req, res) => {
     email: data.client_email,
     mustChangePassword: data.must_change_password,
     createdAt: data.created_at,
+    pausedUntil: data.paused_until ?? null,
   })
 })
 
@@ -533,4 +535,51 @@ clientAuthRouter.post('/test-send', authenticateClient, portalLimiter, validate(
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message })
   }
+})
+
+// POST /client/pause
+clientAuthRouter.post('/pause', authenticateClient, validate(PauseSchema), async (req, res) => {
+  const clientId = (req as any).clientId as string
+  const { days } = req.body
+
+  const pausedUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+
+  const { error } = await supabase
+    .from('clients')
+    .update({ paused_until: pausedUntil })
+    .eq('id', clientId)
+
+  if (error) return res.status(500).json({ error: error.message })
+
+  const { error: logError } = await supabase.from('activity_logs').insert({
+    client_id: clientId,
+    action_type: 'pause_enabled',
+    payload_json: { days, paused_until: pausedUntil },
+    status: 'ok',
+  })
+  if (logError) console.warn('[pause] activity log insert failed:', logError.message)
+
+  res.json({ ok: true, pausedUntil })
+})
+
+// DELETE /client/pause
+clientAuthRouter.delete('/pause', authenticateClient, async (req, res) => {
+  const clientId = (req as any).clientId as string
+
+  const { error } = await supabase
+    .from('clients')
+    .update({ paused_until: null })
+    .eq('id', clientId)
+
+  if (error) return res.status(500).json({ error: error.message })
+
+  const { error: logError } = await supabase.from('activity_logs').insert({
+    client_id: clientId,
+    action_type: 'pause_disabled',
+    payload_json: {},
+    status: 'ok',
+  })
+  if (logError) console.warn('[pause] activity log insert failed:', logError.message)
+
+  res.json({ ok: true })
 })
