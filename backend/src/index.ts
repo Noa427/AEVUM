@@ -2,7 +2,7 @@ import 'dotenv/config'
 
 const REQUIRED_ENV = [
   'JWT_SECRET', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY',
-  'SUPABASE_ANON_KEY', 'ENCRYPTION_KEY', 'FRONTEND_URL', 'VITRINE_URL',
+  'SUPABASE_ANON_KEY', 'ENCRYPTION_KEY', 'FRONTEND_URL', 'VITRINE_URL', 'BACKEND_URL',
 ]
 const missing = REQUIRED_ENV.filter(k => !process.env[k])
 if (missing.length) {
@@ -23,6 +23,7 @@ import { simulateRouter } from './routes/simulate'
 import { portalRouter } from './routes/portal'
 import { supportRouter } from './routes/support'
 import { clientAuthRouter } from './routes/clientAuth'
+import { trackingRouter } from './routes/tracking'
 import { errorHandler } from './middleware/error-handler'
 import { apiLimiter, webhookLimiter, simulateLimiter, portalLimiter } from './middleware/rate-limit'
 import { runScheduledJobs, runCustomAutomations } from './cron'
@@ -58,6 +59,7 @@ app.use('/api/simulate', simulateLimiter, simulateRouter)
 app.use('/api/portal', portalCors, portalLimiter, portalRouter)
 app.use('/client', portalCors, clientAuthRouter)
 app.use('/api/support', adminCors, apiLimiter, supportRouter)
+app.use('/track', trackingRouter)
 
 app.use(errorHandler)
 
