@@ -674,3 +674,181 @@ clientAuthRouter.delete('/blacklist/:email', authenticateClient, async (req, res
 
   res.json({ ok: true })
 })
+
+type StudentStatus = 'actif' | 'en_dunning' | 'suspendu' | 'blackliste'
+
+interface StudentSummary {
+  id: string
+  nom: string
+  prenom: string
+  email: string
+  formation: string
+  status: StudentStatus
+  date_inscription: string
+  derniere_action: string | null
+  emails_recus: number
+}
+
+// GET /client/students
+clientAuthRouter.get('/students', authenticateClient, async (req, res) => {
+  const clientId = (req as any).clientId as string
+  const page = Math.max(1, parseInt(req.query.page as string) || 1)
+  const limit = Math.min(parseInt(req.query.limit as string) || 50, 200)
+  const statusFilter = (req.query.status as string) || 'all'
+  const search = ((req.query.search as string) || '').toLowerCase().trim()
+
+  const [tasksResult, blacklistResult, pendingDunningResult, j7DoneResult, recoveredLogsResult, sentLogsResult] =
+    await Promise.all([
+      supabase
+        .from('pending_tasks')
+        .select('context_json, created_at')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: true })
+        .limit(5000),
+      supabase.from('client_blacklist').select('email').eq('client_id', clientId),
+      supabase
+        .from('scheduled_jobs')
+        .select('context_json')
+        .eq('client_id', clientId)
+        .like('job_type', 'failed_payment%')
+        .eq('status', 'pending'),
+      supabase
+        .from('scheduled_jobs')
+        .select('context_json')
+        .eq('client_id', clientId)
+        .eq('job_type', 'failed_payment_j7')
+        .eq('status', 'done'),
+      supabase
+        .from('activity_logs')
+        .select('payload_json')
+        .eq('client_id', clientId)
+        .eq('action_type', 'payment_recovered'),
+      supabase
+        .from('activity_logs')
+        .select('payload_json, created_at')
+        .eq('client_id', clientId)
+        .eq('status', 'sent')
+        .order('created_at', { ascending: false })
+        .limit(5000),
+    ])
+
+  const blacklistedEmails = new Set((blacklistResult.data ?? []).map((b: any) => b.email as string))
+  const dunningEmails = new Set(
+    (pendingDunningResult.data ?? [])
+      .map((j: any) => (j.context_json as any)?.customer_email as string | undefined)
+      .filter(Boolean) as string[]
+  )
+  const j7Emails = new Set(
+    (j7DoneResult.data ?? [])
+      .map((j: any) => (j.context_json as any)?.customer_email as string | undefined)
+      .filter(Boolean) as string[]
+  )
+  const recoveredEmails = new Set(
+    (recoveredLogsResult.data ?? [])
+      .map((l: any) => (l.payload_json as any)?.customer_email as string | undefined)
+      .filter(Boolean) as string[]
+  )
+  const suspendedEmails = new Set([...j7Emails].filter(e => !recoveredEmails.has(e)))
+
+  const logMap = new Map<string, { count: number; derniere: string }>()
+  for (const log of sentLogsResult.data ?? []) {
+    const email = (log.payload_json as any)?.to as string | undefined
+    if (!email) continue
+    if (!logMap.has(email)) logMap.set(email, { count: 0, derniere: log.created_at })
+    logMap.get(email)!.count++
+  }
+
+  const studentMap = new Map<string, StudentSummary>()
+  for (const t of tasksResult.data ?? []) {
+    const ctx = t.context_json as Record<string, any>
+    const email = ctx?.customer_email as string | undefined
+    if (!email || studentMap.has(email)) continue
+
+    const logInfo = logMap.get(email)
+    const status: StudentStatus = blacklistedEmails.has(email)
+      ? 'blackliste'
+      : dunningEmails.has(email)
+      ? 'en_dunning'
+      : suspendedEmails.has(email)
+      ? 'suspendu'
+      : 'actif'
+
+    studentMap.set(email, {
+      id: email,
+      nom: ctx?.customer_name ?? ctx?.student_name ?? '',
+      prenom: ctx?.student_name ?? '',
+      email,
+      formation: ctx?.product_name ?? '',
+      status,
+      date_inscription: t.created_at,
+      derniere_action: logInfo?.derniere ?? null,
+      emails_recus: logInfo?.count ?? 0,
+    })
+  }
+
+  let students = [...studentMap.values()]
+
+  if (statusFilter !== 'all') {
+    students = students.filter(s => s.status === statusFilter)
+  }
+  if (search) {
+    students = students.filter(
+      s =>
+        s.email.toLowerCase().includes(search) ||
+        s.nom.toLowerCase().includes(search) ||
+        s.prenom.toLowerCase().includes(search)
+    )
+  }
+
+  const total = students.length
+  const offset = (page - 1) * limit
+  const paginated = students.slice(offset, offset + limit)
+
+  res.json({ total, page, limit, students: paginated })
+})
+
+// GET /client/students/:id  (id = email URL-encoded)
+clientAuthRouter.get('/students/:id', authenticateClient, async (req, res) => {
+  const clientId = (req as any).clientId as string
+  const email = decodeURIComponent(req.params.id).toLowerCase()
+
+  const { data: tasks } = await supabase
+    .from('pending_tasks')
+    .select('context_json, task_type, status, created_at')
+    .eq('client_id', clientId)
+    .contains('context_json', { customer_email: email })
+    .order('created_at', { ascending: false })
+
+  if (!tasks || tasks.length === 0) {
+    return res.status(404).json({ error: 'Élève introuvable' })
+  }
+
+  const latest = tasks[tasks.length - 1].context_json as Record<string, any>
+
+  const { data: logs } = await supabase
+    .from('activity_logs')
+    .select('action_type, payload_json, created_at')
+    .eq('client_id', clientId)
+    .eq('status', 'sent')
+    .contains('payload_json', { to: email })
+    .order('created_at', { ascending: false })
+
+  const emailHistory = (logs ?? []).map((l: any) => ({
+    type: l.action_type as string,
+    sent_at: l.created_at as string,
+    subject: (l.payload_json as any)?.subject ?? '',
+  }))
+
+  res.json({
+    id: email,
+    nom: latest?.customer_name ?? latest?.student_name ?? '',
+    prenom: latest?.student_name ?? '',
+    email,
+    formation: latest?.product_name ?? '',
+    date_inscription: tasks[tasks.length - 1].created_at,
+    emails_recus: emailHistory.length,
+    email_history: emailHistory,
+  })
+})
+
+export default clientAuthRouter
