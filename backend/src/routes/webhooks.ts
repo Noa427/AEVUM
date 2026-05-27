@@ -52,6 +52,8 @@ webhooksRouter.post('/:clientId', verifyStripeSignature, async (req, res) => {
     await handleFailedPayment({ event, clientId, client, sender_name, isAuto, configMap })
   } else if (event.type === 'checkout.session.completed') {
     await handleCheckoutCompleted({ event, clientId, client, sender_name, isAuto, configMap })
+  } else if (event.type === 'invoice.payment_succeeded') {
+    await handlePaymentRecovered({ event, clientId })
   }
 })
 
@@ -284,4 +286,32 @@ async function handleCheckoutCompleted(opts: {
       status: 'failed',
     })
   }
+}
+
+async function handlePaymentRecovered(opts: { event: any; clientId: string }) {
+  const { event, clientId } = opts
+  const inv = event.data.object as any
+  const customerEmail = inv.customer_email ?? inv.metadata?.customer_email ?? ''
+  const amount = (inv.amount_paid ?? inv.amount_due ?? 0) / 100
+
+  if (!customerEmail) return
+
+  // Only log as recovery if there was a prior dunning attempt for this customer
+  const { count } = await supabase
+    .from('activity_logs')
+    .select('*', { count: 'exact', head: true })
+    .eq('client_id', clientId)
+    .like('action_type', 'failed_payment%')
+    .eq('status', 'sent')
+    .contains('payload_json', { to: customerEmail })
+
+  if (!count || count === 0) return
+
+  await supabase.from('activity_logs').insert({
+    client_id: clientId,
+    action_type: 'payment_recovered',
+    payload_json: { customer_email: customerEmail, amount },
+    status: 'ok',
+  })
+  console.log(`[webhook] paiement récupéré pour ${customerEmail} — ${amount}€`)
 }

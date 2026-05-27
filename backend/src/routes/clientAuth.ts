@@ -286,7 +286,7 @@ clientAuthRouter.get('/history', authenticateClient, async (req, res) => {
 
 // GET /client/stats
 clientAuthRouter.get('/stats', authenticateClient, async (req, res) => {
-  const clientId = (req as any).clientId
+  const clientId = (req as any).clientId as string
   const startOfMonth = new Date()
   startOfMonth.setDate(1)
   startOfMonth.setHours(0, 0, 0, 0)
@@ -294,16 +294,40 @@ clientAuthRouter.get('/stats', authenticateClient, async (req, res) => {
 
   const base = () => supabase.from('activity_logs').select('*', { count: 'exact', head: true }).eq('client_id', clientId)
 
-  const [total, monthly, onboarding, relances, upsells] = await Promise.all([
+  const [total, monthly, onboarding, relances, upsells, recoveredRows] = await Promise.all([
     base(),
     base().gte('created_at', monthTs),
     base().like('action_type', '%onboarding%'),
     base().or('action_type.like.%payment%,action_type.like.%relance%'),
     base().like('action_type', '%upsell%'),
+    supabase
+      .from('activity_logs')
+      .select('payload_json')
+      .eq('client_id', clientId)
+      .eq('action_type', 'payment_recovered')
+      .gte('created_at', monthTs),
   ])
 
-  const err = total.error ?? monthly.error ?? onboarding.error ?? relances.error ?? upsells.error
+  const err = total.error ?? monthly.error ?? onboarding.error ?? relances.error ?? upsells.error ?? recoveredRows.error
   if (err) return res.status(500).json({ error: err.message })
+
+  // dunning sent this month (j1/j3/j7)
+  const { count: dunningCount } = await supabase
+    .from('activity_logs')
+    .select('*', { count: 'exact', head: true })
+    .eq('client_id', clientId)
+    .like('action_type', 'failed_payment%')
+    .eq('status', 'sent')
+    .gte('created_at', monthTs)
+
+  const recouvrements = recoveredRows.data ?? []
+  const montantRecupere = recouvrements.reduce(
+    (sum: number, r: any) => sum + ((r.payload_json as any)?.amount ?? 0),
+    0
+  )
+  const recoveredCount = recouvrements.length
+  const totalDunning = dunningCount ?? 0
+  const taux = totalDunning > 0 ? Math.round((recoveredCount / totalDunning) * 100) : 0
 
   res.json({
     total_emails: total.count ?? 0,
@@ -311,6 +335,8 @@ clientAuthRouter.get('/stats', authenticateClient, async (req, res) => {
     onboarding_envoyes: onboarding.count ?? 0,
     relances_envoyees: relances.count ?? 0,
     upsells_envoyes: upsells.count ?? 0,
+    recouvrement_montant_recupere: Math.round(montantRecupere * 100) / 100,
+    recouvrement_taux: Math.min(taux, 100),
   })
 })
 
