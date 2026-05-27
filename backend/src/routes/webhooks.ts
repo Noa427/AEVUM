@@ -6,6 +6,7 @@ import { callClaude } from '../services/claude'
 import { sendEmail } from '../services/resend'
 import { verifyStripeSignature } from '../middleware/stripe-sig'
 import { getEmailTemplate, templateToAiResponse } from '../utils/getEmailTemplate'
+import { insertTrackingRow, injectTracking } from '../utils/tracking'
 
 export const webhooksRouter = Router()
 
@@ -54,6 +55,8 @@ webhooksRouter.post('/:clientId', verifyStripeSignature, async (req, res) => {
     await handleCheckoutCompleted({ event, clientId, client, sender_name, isAuto, configMap })
   } else if (event.type === 'invoice.payment_succeeded') {
     await handlePaymentRecovered({ event, clientId })
+  } else if (event.type === 'checkout.session.expired') {
+    await handleCheckoutSessionExpired({ event, clientId })
   }
 })
 
@@ -156,7 +159,12 @@ async function handleFailedPayment(opts: {
     const aiResponse = await callClaude(prompt_template, 'claude-sonnet-4-6')
     const { subject, body_html } = parseClaudeResponse(aiResponse)
     const html = wrapEmailHtml(body_html, sender_name)
-    await sendEmail({ to: context_json.customer_email, subject, html, sender_name, reply_to: client?.email })
+    const trackingToken = await insertTrackingRow({
+      clientId,
+      studentEmail: context_json.customer_email,
+      configType: 'template_failed_payment_j1',
+    })
+    await sendEmail({ to: context_json.customer_email, subject, html: injectTracking(html, trackingToken, process.env.BACKEND_URL!), sender_name, reply_to: client?.email })
     await supabase
       .from('pending_tasks')
       .update({ status: 'sent', ai_response: aiResponse, processed_at: new Date().toISOString() })
@@ -164,7 +172,7 @@ async function handleFailedPayment(opts: {
     await supabase.from('activity_logs').insert({
       client_id: clientId,
       action_type: 'failed_payment_email',
-      payload_json: { subject, to: context_json.customer_email, amount: context_json.amount },
+      payload_json: { subject, to: context_json.customer_email, amount: context_json.amount, tracking_id: trackingToken },
       status: 'sent',
     })
   } catch (err: any) {
@@ -263,7 +271,12 @@ async function handleCheckoutCompleted(opts: {
     const aiResponse = await callClaude(prompt, 'claude-sonnet-4-6')
     const { subject, body_html } = parseClaudeResponse(aiResponse)
     const html = wrapEmailHtml(body_html, sender_name)
-    await sendEmail({ to: context_json.customer_email, subject, html, sender_name, reply_to: client?.email })
+    const trackingToken = await insertTrackingRow({
+      clientId,
+      studentEmail: context_json.customer_email,
+      configType: 'template_onboarding_j0',
+    })
+    await sendEmail({ to: context_json.customer_email, subject, html: injectTracking(html, trackingToken, process.env.BACKEND_URL!), sender_name, reply_to: client?.email })
     await supabase
       .from('pending_tasks')
       .update({ status: 'sent', ai_response: aiResponse, processed_at: new Date().toISOString() })
@@ -271,7 +284,7 @@ async function handleCheckoutCompleted(opts: {
     await supabase.from('activity_logs').insert({
       client_id: clientId,
       action_type: 'onboarding_j0_email',
-      payload_json: { subject, to: context_json.customer_email },
+      payload_json: { subject, to: context_json.customer_email, tracking_id: trackingToken },
       status: 'sent',
     })
   } catch (err: any) {
@@ -314,4 +327,28 @@ async function handlePaymentRecovered(opts: { event: any; clientId: string }) {
     status: 'ok',
   })
   console.log(`[webhook] paiement récupéré pour ${customerEmail} — ${amount}€`)
+}
+
+async function handleCheckoutSessionExpired(opts: { event: any; clientId: string }) {
+  const { event, clientId } = opts
+  const session = event.data.object as any
+  const customerEmail = session.customer_details?.email as string | undefined
+  if (!customerEmail) return
+
+  // Schedule 30 min from now — actual delivery depends on cron interval (max 60 min)
+  const scheduledFor = new Date(Date.now() + 30 * 60 * 1000).toISOString()
+
+  await supabase.from('scheduled_jobs').insert({
+    client_id: clientId,
+    job_type: 'checkout_abandon',
+    context_json: {
+      customer_email: customerEmail,
+      customer_name: session.customer_details?.name ?? '',
+      product_name: session.metadata?.product_name ?? '',
+      checkout_url: session.url ?? '',
+    },
+    scheduled_for: scheduledFor,
+    status: 'pending',
+  })
+  console.log(`[webhook] checkout_abandon planifié pour ${customerEmail}`)
 }
