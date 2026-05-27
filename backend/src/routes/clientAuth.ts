@@ -16,7 +16,7 @@ import {
   AutomationSchema, AutomationUpdateSchema, AiGenerateSchema, AiImproveSchema,
   ForgotPasswordSchema, ResetPasswordSchema,
   ALLOWED_CONFIG_TYPES, TestSendSchema, TEMPLATE_CONFIG_TYPES,
-  PauseSchema, BlacklistAddSchema,
+  PauseSchema, BlacklistAddSchema, ManualSendSchema,
 } from '../schemas/client'
 
 export const clientAuthRouter = Router()
@@ -849,6 +849,102 @@ clientAuthRouter.get('/students/:id', authenticateClient, async (req, res) => {
     emails_recus: emailHistory.length,
     email_history: emailHistory,
   })
+})
+
+// POST /client/send-manual
+clientAuthRouter.post('/send-manual', authenticateClient, validate(ManualSendSchema), async (req, res) => {
+  const clientId = (req as any).clientId as string
+  const { student_email, config_type } = req.body
+
+  const isTemplateType = (TEMPLATE_CONFIG_TYPES as readonly string[]).includes(config_type)
+  const isCustomUUID = UUID_RE.test(config_type)
+
+  if (!isTemplateType && !isCustomUUID) {
+    return res.status(400).json({ error: 'config_type invalide' })
+  }
+
+  const { data: senderRow } = await supabase
+    .from('client_configs')
+    .select('encrypted_value')
+    .eq('client_id', clientId)
+    .eq('config_type', 'sender_name')
+    .single()
+
+  const senderName = senderRow?.encrypted_value
+    ? (() => { try { return decrypt(senderRow.encrypted_value) } catch { return 'Formateur' } })()
+    : 'Formateur'
+
+  const { data: latestTask } = await supabase
+    .from('pending_tasks')
+    .select('context_json')
+    .eq('client_id', clientId)
+    .contains('context_json', { customer_email: student_email.toLowerCase() })
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single()
+
+  const ctx = (latestTask?.context_json as Record<string, any>) ?? {}
+  const vars: Record<string, string> = {
+    nom: ctx?.customer_name ?? ctx?.student_name ?? '',
+    prenom: ctx?.student_name ?? '',
+    email: student_email,
+    nom_formation: ctx?.product_name ?? '',
+    lien_acces: ctx?.lien_acces ?? '',
+    mot_de_passe: '',
+    montant: String(ctx?.amount ?? ''),
+    lien_paiement: ctx?.payment_link ?? ctx?.hosted_invoice_url ?? '',
+  }
+
+  let subject: string
+  let htmlBody: string
+
+  if (isTemplateType) {
+    const tpl = await getEmailTemplate(clientId, config_type as any, vars)
+    subject = tpl.subject
+    htmlBody = wrapEmailHtml(tpl.body.replace(/\n/g, '<br>'), senderName)
+  } else {
+    const { data: automation } = await supabase
+      .from('custom_automations')
+      .select('subject, body, active')
+      .eq('id', config_type)
+      .eq('client_id', clientId)
+      .single()
+
+    if (!automation) return res.status(404).json({ error: 'Automation introuvable' })
+
+    const injectVars = (text: string) =>
+      text.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`)
+
+    subject = injectVars(automation.subject)
+    htmlBody = wrapEmailHtml(injectVars(automation.body).replace(/\n/g, '<br>'), senderName)
+  }
+
+  try {
+    await sendEmail({
+      to: student_email.toLowerCase(),
+      subject,
+      html: htmlBody,
+      sender_name: senderName,
+    })
+
+    const { error: logError } = await supabase.from('activity_logs').insert({
+      client_id: clientId,
+      action_type: 'manual_send',
+      payload_json: { config_type, student_email: student_email.toLowerCase(), subject },
+      status: 'sent',
+    })
+    if (logError) console.warn('[send-manual] log insert failed:', logError.message)
+
+    res.json({ success: true })
+  } catch (err: any) {
+    await supabase.from('activity_logs').insert({
+      client_id: clientId,
+      action_type: 'manual_send',
+      payload_json: { config_type, student_email: student_email.toLowerCase(), error: err.message },
+      status: 'failed',
+    })
+    res.status(500).json({ success: false, error: err.message })
+  }
 })
 
 export default clientAuthRouter
