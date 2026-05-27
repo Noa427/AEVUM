@@ -3,6 +3,8 @@ import { getTemplate, TaskType, buildPromptUpsell, parseClaudeResponse, wrapEmai
 import { callClaude } from './services/claude'
 import { sendEmail } from './services/resend'
 import { decrypt } from './services/encryption'
+import { insertTrackingRow, injectTracking } from './utils/tracking'
+import { getEmailTemplate } from './utils/getEmailTemplate'
 
 async function recoverStuckTasks(): Promise<void> {
   const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString()
@@ -76,6 +78,8 @@ export async function runScheduledJobs(): Promise<void> {
     try {
       if (job.job_type === 'upsell') {
         await handleUpsellJob(job)
+      } else if (job.job_type === 'checkout_abandon') {
+        await handleCheckoutAbandonJob(job)
       } else {
         await handleStandardJob(job)
       }
@@ -167,10 +171,15 @@ async function handleUpsellJob(job: any): Promise<void> {
     const aiResponse = await callClaude(prompt_template, 'claude-sonnet-4-6')
     const { subject, body_html } = parseClaudeResponse(aiResponse)
     const html = wrapEmailHtml(body_html, ctx.sender_name ?? 'Formateur')
+    const trackingToken = await insertTrackingRow({
+      clientId: job.client_id,
+      studentEmail: ctx.customer_email,
+      configType: 'upsell',
+    })
     await sendEmail({
       to: ctx.customer_email,
       subject,
-      html,
+      html: injectTracking(html, trackingToken, process.env.BACKEND_URL!),
       sender_name: ctx.sender_name ?? 'Formateur',
       reply_to: (client as any)?.email,
     })
@@ -181,7 +190,7 @@ async function handleUpsellJob(job: any): Promise<void> {
     await supabase.from('activity_logs').insert({
       client_id: job.client_id,
       action_type: 'upsell_email',
-      payload_json: { subject, to: ctx.customer_email, product: ctx.upsell_product_name },
+      payload_json: { subject, to: ctx.customer_email, product: ctx.upsell_product_name, tracking_id: trackingToken },
       status: 'sent',
     })
     console.log(`[cron] job ${job.id} (upsell) → email envoyé à ${ctx.customer_email}`)
@@ -196,6 +205,84 @@ async function handleUpsellJob(job: any): Promise<void> {
       status: 'failed',
     })
     throw err
+  }
+}
+
+async function handleCheckoutAbandonJob(job: any): Promise<void> {
+  const ctx = job.context_json as Record<string, any>
+  const customerEmail = ctx?.customer_email as string | undefined
+  const markDone = () => supabase.from('scheduled_jobs').update({ status: 'done' }).eq('id', job.id)
+
+  if (!customerEmail) { await markDone(); return }
+
+  // Blacklist check
+  const { count: isBlacklisted } = await supabase
+    .from('client_blacklist')
+    .select('*', { count: 'exact', head: true })
+    .eq('client_id', job.client_id)
+    .eq('email', customerEmail.toLowerCase())
+  if (isBlacklisted && isBlacklisted > 0) { await markDone(); return }
+
+  // Template must exist in client_configs (no default fallback — spec: "absent → ne pas envoyer")
+  const { data: configRow } = await supabase
+    .from('client_configs')
+    .select('encrypted_value')
+    .eq('client_id', job.client_id)
+    .eq('config_type', 'template_checkout_abandon')
+    .single()
+  if (!configRow?.encrypted_value) { await markDone(); return }
+
+  let parsed: { subject?: string; body?: string; active?: boolean } | null = null
+  try { parsed = JSON.parse(decrypt(configRow.encrypted_value)) } catch {}
+  if (!parsed || parsed.active === false || !parsed.subject || !parsed.body) { await markDone(); return }
+
+  const { data: senderRow } = await supabase
+    .from('client_configs')
+    .select('encrypted_value')
+    .eq('client_id', job.client_id)
+    .eq('config_type', 'sender_name')
+    .single()
+  const senderName = senderRow?.encrypted_value
+    ? (() => { try { return decrypt(senderRow.encrypted_value) } catch { return 'Formateur' } })()
+    : 'Formateur'
+
+  const vars: Record<string, string> = {
+    nom: ctx?.customer_name ?? '',
+    prenom: (ctx?.customer_name ?? '').split(' ')[0],
+    email: customerEmail,
+    nom_formation: ctx?.product_name ?? '',
+    lien_checkout: ctx?.checkout_url ?? '',
+  }
+  const injectVars = (text: string) =>
+    text.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`)
+
+  const subject = injectVars(parsed.subject)
+  const body = injectVars(parsed.body)
+  const html = wrapEmailHtml(body.replace(/\n/g, '<br>'), senderName)
+  const trackingToken = await insertTrackingRow({
+    clientId: job.client_id,
+    studentEmail: customerEmail,
+    configType: 'template_checkout_abandon',
+  })
+
+  try {
+    await sendEmail({ to: customerEmail, subject, html: injectTracking(html, trackingToken, process.env.BACKEND_URL!), sender_name: senderName })
+    await markDone()
+    await supabase.from('activity_logs').insert({
+      client_id: job.client_id,
+      action_type: 'checkout_abandon_sent',
+      payload_json: { to: customerEmail, subject, tracking_id: trackingToken },
+      status: 'sent',
+    })
+    console.log(`[cron] checkout_abandon → ${customerEmail}`)
+  } catch (err: any) {
+    await supabase.from('scheduled_jobs').update({ status: 'failed' }).eq('id', job.id)
+    await supabase.from('activity_logs').insert({
+      client_id: job.client_id,
+      action_type: 'checkout_abandon_sent',
+      payload_json: { error: err.message, to: customerEmail },
+      status: 'failed',
+    })
   }
 }
 
@@ -273,12 +360,18 @@ export async function runCustomAutomations(): Promise<void> {
     try {
       const senderName = senderMap.get(automation.client_id) ?? client.name
       const html = wrapEmailHtml(automation.body.replace(/\n/g, '<br>'), senderName)
-      await sendEmail({ to: client.email, subject: automation.subject, html, sender_name: senderName })
+      const trackingToken = await insertTrackingRow({
+        clientId: automation.client_id,
+        studentEmail: client.email,
+        configType: 'custom_automation',
+        automationId: automation.id,
+      })
+      await sendEmail({ to: client.email, subject: automation.subject, html: injectTracking(html, trackingToken, process.env.BACKEND_URL!), sender_name: senderName })
 
       await supabase.from('activity_logs').insert({
         client_id: automation.client_id,
         action_type: 'custom_automation',
-        payload_json: { automation_id: automation.id, name: automation.name, to: client.email, subject: automation.subject },
+        payload_json: { automation_id: automation.id, name: automation.name, to: client.email, subject: automation.subject, tracking_id: trackingToken },
         status: 'sent',
       })
 
@@ -365,6 +458,121 @@ export async function sendWeeklyReport(): Promise<void> {
       console.log(`[cron] rapport hebdo → ${client.email}`)
     } catch (err: any) {
       console.error(`[cron] rapport hebdo échoué (${client.name}):`, err.message)
+    }
+  }
+}
+
+export async function runTestimonialEmails(): Promise<void> {
+  // Time gate: only execute at 08:xx UTC to avoid duplicate sends within a day
+  if (new Date().getUTCHours() !== 8) return
+
+  const { data: configs } = await supabase
+    .from('client_configs')
+    .select('client_id, config_type, encrypted_value')
+    .in('config_type', ['testimonial_url', 'template_testimonial_j30', 'template_testimonial_j60'])
+
+  const clientConfigMap = new Map<string, Record<string, string>>()
+  for (const c of configs ?? []) {
+    try {
+      const val = decrypt(c.encrypted_value)
+      if (!clientConfigMap.has(c.client_id)) clientConfigMap.set(c.client_id, {})
+      clientConfigMap.get(c.client_id)![c.config_type] = val
+    } catch {}
+  }
+
+  for (const [clientId, configMap] of clientConfigMap) {
+    const testimonialUrl = configMap['testimonial_url']
+    if (!testimonialUrl) continue
+
+    const { data: clientRow } = await supabase.from('clients').select('paused_until').eq('id', clientId).single()
+    if (clientRow?.paused_until && new Date() < new Date(clientRow.paused_until)) continue
+
+    const { data: senderRow } = await supabase
+      .from('client_configs').select('encrypted_value')
+      .eq('client_id', clientId).eq('config_type', 'sender_name').single()
+    const senderName = senderRow?.encrypted_value
+      ? (() => { try { return decrypt(senderRow.encrypted_value) } catch { return 'Formateur' } })()
+      : 'Formateur'
+
+    for (const milestone of ['j30', 'j60'] as const) {
+      const configType = `template_testimonial_${milestone}` as const
+      const templateRaw = configMap[configType]
+      if (templateRaw) {
+        try { if (JSON.parse(templateRaw).active === false) continue } catch {}
+      }
+
+      const days = milestone === 'j30' ? 30 : 60
+      const fromTs = new Date(Date.now() - (days + 1) * 24 * 60 * 60 * 1000).toISOString()
+      const toTs = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+
+      const { data: windowTasks } = await supabase
+        .from('pending_tasks')
+        .select('context_json, created_at')
+        .eq('client_id', clientId)
+        .gte('created_at', fromTs)
+        .lte('created_at', toTs)
+
+      const emailsInWindow = [
+        ...new Set(
+          (windowTasks ?? [])
+            .map((t: any) => (t.context_json as any)?.customer_email as string | undefined)
+            .filter(Boolean) as string[]
+        ),
+      ]
+
+      for (const studentEmail of emailsInWindow) {
+        // Skip if already sent for this milestone
+        const { count: alreadySent } = await supabase
+          .from('activity_logs')
+          .select('*', { count: 'exact', head: true })
+          .eq('client_id', clientId)
+          .eq('action_type', `testimonial_${milestone}_sent`)
+          .contains('payload_json', { student_email: studentEmail })
+        if (alreadySent && alreadySent > 0) continue
+
+        // Get student context
+        const { data: latestTaskRow } = await supabase
+          .from('pending_tasks')
+          .select('context_json')
+          .eq('client_id', clientId)
+          .contains('context_json', { customer_email: studentEmail })
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single()
+        const ctx = (latestTaskRow?.context_json as Record<string, any>) ?? {}
+
+        try {
+          const tpl = await getEmailTemplate(clientId, configType, {
+            nom: ctx?.customer_name ?? ctx?.student_name ?? '',
+            prenom: ctx?.student_name ?? '',
+            nom_formation: ctx?.product_name ?? '',
+            lien_temoignage: testimonialUrl,
+          })
+          const html = wrapEmailHtml(tpl.body.replace(/\n/g, '<br>'), senderName)
+          const trackingToken = await insertTrackingRow({ clientId, studentEmail, configType })
+          await sendEmail({
+            to: studentEmail,
+            subject: tpl.subject,
+            html: injectTracking(html, trackingToken, process.env.BACKEND_URL!),
+            sender_name: senderName,
+          })
+          await supabase.from('activity_logs').insert({
+            client_id: clientId,
+            action_type: `testimonial_${milestone}_sent`,
+            payload_json: { student_email: studentEmail, nom_formation: ctx?.product_name ?? '', tracking_id: trackingToken },
+            status: 'sent',
+          })
+          console.log(`[cron:testimonial] ${milestone} → ${studentEmail}`)
+        } catch (err: any) {
+          console.error(`[cron:testimonial] ${milestone} échoué pour ${studentEmail}:`, err.message)
+          await supabase.from('activity_logs').insert({
+            client_id: clientId,
+            action_type: `testimonial_${milestone}_sent`,
+            payload_json: { student_email: studentEmail, error: err.message },
+            status: 'failed',
+          })
+        }
+      }
     }
   }
 }

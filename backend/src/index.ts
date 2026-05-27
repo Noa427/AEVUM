@@ -26,7 +26,7 @@ import { clientAuthRouter } from './routes/clientAuth'
 import { trackingRouter } from './routes/tracking'
 import { errorHandler } from './middleware/error-handler'
 import { apiLimiter, webhookLimiter, simulateLimiter, portalLimiter } from './middleware/rate-limit'
-import { runScheduledJobs, runCustomAutomations } from './cron'
+import { runScheduledJobs, runCustomAutomations, runTestimonialEmails } from './cron'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -68,7 +68,9 @@ app.listen(PORT, () => {
   if (process.env.ENABLE_CRON === 'true') {
     runScheduledJobs()
     runCustomAutomations()
+    runTestimonialEmails()
     setInterval(runScheduledJobs, 60 * 60 * 1000)
     setInterval(runCustomAutomations, 60 * 60 * 1000)
+    setInterval(runTestimonialEmails, 60 * 60 * 1000)
   }
 })

@@ -5,6 +5,7 @@ import { parseClaudeResponse, wrapEmailHtml } from '../services/templates'
 import { callClaude } from '../services/claude'
 import { sendEmail } from '../services/resend'
 import { decrypt } from '../services/encryption'
+import { insertTrackingRow, injectTracking } from '../utils/tracking'
 
 export const tasksRouter = Router()
 tasksRouter.use(requireAuth)
@@ -91,7 +92,12 @@ tasksRouter.post('/:id/send', async (req, res) => {
   const action_type = `${task.task_type}_email`
 
   try {
-    await sendEmail({ to: customer_email, subject, html, sender_name, reply_to: (task as any).clients?.email })
+    const trackingToken = await insertTrackingRow({
+      clientId: task.client_id,
+      studentEmail: customer_email,
+      configType: `template_${task.task_type}`,
+    })
+    await sendEmail({ to: customer_email, subject, html: injectTracking(html, trackingToken, process.env.BACKEND_URL!), sender_name, reply_to: (task as any).clients?.email })
     await supabase
       .from('pending_tasks')
       .update({ status: 'sent', ai_response, processed_at: new Date().toISOString() })
@@ -99,7 +105,7 @@ tasksRouter.post('/:id/send', async (req, res) => {
     await supabase.from('activity_logs').insert({
       client_id: task.client_id,
       action_type,
-      payload_json: { subject, to: customer_email, amount: ctx.amount },
+      payload_json: { subject, to: customer_email, amount: ctx.amount, tracking_id: trackingToken },
       status: 'sent',
     })
     res.json({ ok: true })

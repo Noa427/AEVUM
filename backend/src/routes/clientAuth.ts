@@ -17,6 +17,7 @@ import {
   ForgotPasswordSchema, ResetPasswordSchema,
   ALLOWED_CONFIG_TYPES, TestSendSchema, TEMPLATE_CONFIG_TYPES,
   PauseSchema, BlacklistAddSchema, ManualSendSchema,
+  FormationSchema, FormationUpdateSchema,
 } from '../schemas/client'
 
 export const clientAuthRouter = Router()
@@ -32,6 +33,33 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 
 async function randomDelay() {
   await new Promise(resolve => setTimeout(resolve, randomInt(750, 1501)))
+}
+
+async function getFormationContext(
+  clientId: string,
+  req: any
+): Promise<{ formationId: string | null; unauthorized: boolean }> {
+  const headerValue = req.headers['x-formation-id'] as string | undefined
+
+  if (headerValue) {
+    const { data } = await supabase
+      .from('formations')
+      .select('id')
+      .eq('id', headerValue)
+      .eq('client_id', clientId)
+      .single()
+    if (!data) return { formationId: null, unauthorized: true }
+    return { formationId: data.id, unauthorized: false }
+  }
+
+  const { data } = await supabase
+    .from('formations')
+    .select('id')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .single()
+  return { formationId: data?.id ?? null, unauthorized: false }
 }
 
 // POST /client/login
@@ -329,6 +357,20 @@ clientAuthRouter.get('/stats', authenticateClient, async (req, res) => {
   const totalDunning = dunningCount ?? 0
   const taux = totalDunning > 0 ? Math.round((recoveredCount / totalDunning) * 100) : 0
 
+  // Tracking — 30 derniers jours
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+  const tBase = () =>
+    supabase.from('email_tracking').select('id', { count: 'exact', head: true })
+      .eq('client_id', clientId).gte('sent_at', thirtyDaysAgo)
+  const [tSent, tOpened, tClicked] = await Promise.all([
+    tBase(),
+    tBase().not('opened_at', 'is', null),
+    tBase().not('clicked_at', 'is', null),
+  ])
+  const sent30 = tSent.count ?? 0
+  const opened = tOpened.count ?? 0
+  const clicked = tClicked.count ?? 0
+
   res.json({
     total_emails: total.count ?? 0,
     ce_mois: monthly.count ?? 0,
@@ -337,6 +379,10 @@ clientAuthRouter.get('/stats', authenticateClient, async (req, res) => {
     upsells_envoyes: upsells.count ?? 0,
     recouvrement_montant_recupere: Math.round(montantRecupere * 100) / 100,
     recouvrement_taux: Math.min(taux, 100),
+    emails_opened: opened,
+    emails_clicked: clicked,
+    open_rate_this_month: sent30 > 0 ? Math.round((opened / sent30) * 100) : 0,
+    click_rate_this_month: sent30 > 0 ? Math.round((clicked / sent30) * 100) : 0,
   })
 })
 
@@ -344,10 +390,15 @@ clientAuthRouter.get('/stats', authenticateClient, async (req, res) => {
 clientAuthRouter.get('/configs', authenticateClient, async (req, res) => {
   const clientId = (req as any).clientId
 
-  const { data, error } = await supabase
+  const { formationId, unauthorized } = await getFormationContext(clientId, req)
+  if (unauthorized) return res.status(403).json({ error: 'Formation introuvable ou accès refusé' })
+
+  let cfgQuery = supabase
     .from('client_configs')
     .select('config_type, encrypted_value')
     .eq('client_id', clientId)
+  if (formationId) cfgQuery = cfgQuery.eq('formation_id', formationId)
+  const { data, error } = await cfgQuery
 
   if (error) return res.status(500).json({ error: error.message })
 
@@ -420,11 +471,12 @@ clientAuthRouter.post('/ai/improve', authenticateClient, aiLimiter, validate(AiI
 clientAuthRouter.get('/automations/custom', authenticateClient, async (req, res) => {
   const clientId = (req as any).clientId
 
-  const { data, error } = await supabase
-    .from('custom_automations')
-    .select('*')
-    .eq('client_id', clientId)
-    .order('created_at', { ascending: false })
+  const { formationId, unauthorized } = await getFormationContext(clientId, req)
+  if (unauthorized) return res.status(403).json({ error: 'Formation introuvable ou accès refusé' })
+
+  let autoQuery = supabase.from('custom_automations').select('*').eq('client_id', clientId)
+  if (formationId) autoQuery = autoQuery.eq('formation_id', formationId)
+  const { data, error } = await autoQuery.order('created_at', { ascending: false })
 
   if (error) return res.status(500).json({ error: error.message })
 
@@ -436,6 +488,9 @@ clientAuthRouter.post('/automations/custom', authenticateClient, validate(Automa
   const clientId = (req as any).clientId
   const { name, trigger_type, trigger_delay_days, trigger_date, subject, body } = req.body
 
+  const { formationId, unauthorized } = await getFormationContext(clientId, req)
+  if (unauthorized) return res.status(403).json({ error: 'Formation introuvable ou accès refusé' })
+
   if (trigger_type === 'delay_after_purchase' && trigger_delay_days == null) {
     return res.status(400).json({ error: 'trigger_delay_days requis pour delay_after_purchase' })
   }
@@ -445,7 +500,7 @@ clientAuthRouter.post('/automations/custom', authenticateClient, validate(Automa
 
   const { data, error } = await supabase
     .from('custom_automations')
-    .insert({ client_id: clientId, name, trigger_type, trigger_delay_days, trigger_date, subject, body })
+    .insert({ client_id: clientId, name, trigger_type, trigger_delay_days, trigger_date, subject, body, formation_id: formationId })
     .select()
     .single()
 
@@ -499,11 +554,17 @@ clientAuthRouter.put('/configs', authenticateClient, validate(ConfigSchema), asy
   const clientId = (req as any).clientId
   const { config_type, value } = req.body
 
+  const { formationId, unauthorized } = await getFormationContext(clientId, req)
+  if (unauthorized) return res.status(403).json({ error: 'Formation introuvable ou accès refusé' })
+
   const encrypted_value = encrypt(value)
 
   const { error } = await supabase
     .from('client_configs')
-    .upsert({ client_id: clientId, config_type, encrypted_value }, { onConflict: 'client_id,config_type' })
+    .upsert(
+      { client_id: clientId, config_type, encrypted_value, formation_id: formationId },
+      { onConflict: 'client_id,config_type' }
+    )
 
   if (error) return res.status(500).json({ error: error.message })
 
@@ -653,7 +714,7 @@ clientAuthRouter.post('/blacklist', authenticateClient, validate(BlacklistAddSch
 // DELETE /client/blacklist/:email
 clientAuthRouter.delete('/blacklist/:email', authenticateClient, async (req, res) => {
   const clientId = (req as any).clientId as string
-  const email = decodeURIComponent(req.params.email).toLowerCase()
+  const email = decodeURIComponent(req.params.email as string).toLowerCase()
 
   const { error, count } = await supabase
     .from('client_blacklist')
@@ -692,6 +753,10 @@ interface StudentSummary {
 // GET /client/students
 clientAuthRouter.get('/students', authenticateClient, async (req, res) => {
   const clientId = (req as any).clientId as string
+
+  const { formationId, unauthorized } = await getFormationContext(clientId, req)
+  if (unauthorized) return res.status(403).json({ error: 'Formation introuvable ou accès refusé' })
+
   const page = Math.max(1, parseInt(req.query.page as string) || 1)
   const limit = Math.min(parseInt(req.query.limit as string) || 50, 200)
   const statusFilter = (req.query.status as string) || 'all'
@@ -699,12 +764,11 @@ clientAuthRouter.get('/students', authenticateClient, async (req, res) => {
 
   const [tasksResult, blacklistResult, pendingDunningResult, j7DoneResult, recoveredLogsResult, sentLogsResult] =
     await Promise.all([
-      supabase
-        .from('pending_tasks')
-        .select('context_json, created_at')
-        .eq('client_id', clientId)
-        .order('created_at', { ascending: true })
-        .limit(5000),
+      (() => {
+        let q = supabase.from('pending_tasks').select('context_json, created_at').eq('client_id', clientId).order('created_at', { ascending: true }).limit(5000)
+        if (formationId) q = q.eq('formation_id', formationId)
+        return q
+      })(),
       supabase.from('client_blacklist').select('email').eq('client_id', clientId),
       supabase
         .from('scheduled_jobs')
@@ -810,7 +874,7 @@ clientAuthRouter.get('/students', authenticateClient, async (req, res) => {
 // GET /client/students/:id  (id = email URL-encoded)
 clientAuthRouter.get('/students/:id', authenticateClient, async (req, res) => {
   const clientId = (req as any).clientId as string
-  const email = decodeURIComponent(req.params.id).toLowerCase()
+  const email = decodeURIComponent(req.params.id as string).toLowerCase()
 
   const { data: tasks } = await supabase
     .from('pending_tasks')
@@ -833,11 +897,33 @@ clientAuthRouter.get('/students/:id', authenticateClient, async (req, res) => {
     .contains('payload_json', { to: email })
     .order('created_at', { ascending: false })
 
-  const emailHistory = (logs ?? []).map((l: any) => ({
-    type: l.action_type as string,
-    sent_at: l.created_at as string,
-    subject: (l.payload_json as any)?.subject ?? '',
-  }))
+  // Fetch tracking rows for emails that have a tracking_id in their payload
+  const trackingIds = (logs ?? [])
+    .map((l: any) => (l.payload_json as any)?.tracking_id as string | undefined)
+    .filter(Boolean) as string[]
+
+  const trackingMap = new Map<string, { opened_at: string | null; clicked_at: string | null }>()
+  if (trackingIds.length > 0) {
+    const { data: tRows } = await supabase
+      .from('email_tracking')
+      .select('id, opened_at, clicked_at')
+      .in('id', trackingIds)
+    for (const t of tRows ?? []) {
+      trackingMap.set(t.id, { opened_at: t.opened_at ?? null, clicked_at: t.clicked_at ?? null })
+    }
+  }
+
+  const emailHistory = (logs ?? []).map((l: any) => {
+    const tid = (l.payload_json as any)?.tracking_id as string | undefined
+    const tr = tid ? trackingMap.get(tid) : undefined
+    return {
+      type: l.action_type as string,
+      sent_at: l.created_at as string,
+      subject: (l.payload_json as any)?.subject ?? '',
+      opened_at: tr?.opened_at ?? null,
+      clicked_at: tr?.clicked_at ?? null,
+    }
+  })
 
   res.json({
     id: email,
@@ -945,6 +1031,82 @@ clientAuthRouter.post('/send-manual', authenticateClient, validate(ManualSendSch
     })
     res.status(500).json({ success: false, error: err.message })
   }
+})
+
+// GET /client/formations
+clientAuthRouter.get('/formations', authenticateClient, async (req, res) => {
+  const clientId = (req as any).clientId as string
+  const { data, error } = await supabase
+    .from('formations')
+    .select('id, name, stripe_product_id, created_at')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: true })
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data ?? [])
+})
+
+// POST /client/formations
+clientAuthRouter.post('/formations', authenticateClient, validate(FormationSchema), async (req, res) => {
+  const clientId = (req as any).clientId as string
+  const { name, stripe_product_id } = req.body
+  const { data, error } = await supabase
+    .from('formations')
+    .insert({ client_id: clientId, name, stripe_product_id: stripe_product_id ?? null })
+    .select('id, name, stripe_product_id, created_at')
+    .single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json(data)
+})
+
+// PUT /client/formations/:id
+clientAuthRouter.put('/formations/:id', authenticateClient, validate(FormationUpdateSchema), async (req, res) => {
+  const clientId = (req as any).clientId as string
+  const updates: Record<string, any> = {}
+  if (req.body.name !== undefined) updates.name = req.body.name
+  if (req.body.stripe_product_id !== undefined) updates.stripe_product_id = req.body.stripe_product_id
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'Aucune modification fournie' })
+
+  const { data, error } = await supabase
+    .from('formations')
+    .update(updates)
+    .eq('id', req.params.id)
+    .eq('client_id', clientId)
+    .select('id, name, stripe_product_id, created_at')
+    .single()
+  if (error || !data) return res.status(404).json({ error: 'Formation introuvable' })
+  res.json(data)
+})
+
+// DELETE /client/formations/:id
+clientAuthRouter.delete('/formations/:id', authenticateClient, async (req, res) => {
+  const clientId = (req as any).clientId as string
+  const { id } = req.params
+
+  const { count: activeAuto } = await supabase
+    .from('custom_automations')
+    .select('*', { count: 'exact', head: true })
+    .eq('client_id', clientId)
+    .eq('formation_id', id)
+    .eq('active', true)
+  if (activeAuto && activeAuto > 0)
+    return res.status(409).json({ error: `Impossible de supprimer : ${activeAuto} automation(s) active(s) liée(s)` })
+
+  const { count: cfgCount } = await supabase
+    .from('client_configs')
+    .select('*', { count: 'exact', head: true })
+    .eq('client_id', clientId)
+    .eq('formation_id', id)
+  if (cfgCount && cfgCount > 0)
+    return res.status(409).json({ error: `Impossible de supprimer : ${cfgCount} configuration(s) liée(s)` })
+
+  const { error, count } = await supabase
+    .from('formations')
+    .delete({ count: 'exact' })
+    .eq('id', id)
+    .eq('client_id', clientId)
+  if (error) return res.status(500).json({ error: error.message })
+  if (count === 0) return res.status(404).json({ error: 'Formation introuvable' })
+  res.json({ ok: true })
 })
 
 export default clientAuthRouter
