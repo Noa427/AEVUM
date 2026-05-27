@@ -6,6 +6,12 @@ export type EmailTemplateType =
   | 'template_onboarding_j3'
   | 'template_onboarding_j7'
   | 'template_failed_payment'
+  | 'template_failed_payment_j1'
+  | 'template_failed_payment_j3'
+  | 'template_failed_payment_j7'
+  | 'template_checkout_abandon'
+  | 'template_testimonial_j30'
+  | 'template_testimonial_j60'
 
 export interface EmailTemplate {
   subject: string
@@ -28,6 +34,30 @@ const DEFAULTS: Record<EmailTemplateType, EmailTemplate> = {
   template_failed_payment: {
     subject: 'Action requise — problème de paiement',
     body: "Bonjour {{nom}},\n\nNous avons rencontré un problème avec votre paiement. Merci de mettre à jour vos informations de paiement pour conserver votre accès.\n\nÀ bientôt,",
+  },
+  template_failed_payment_j1: {
+    subject: 'Action requise — problème de paiement',
+    body: "Bonjour {{nom}},\n\nNous avons rencontré un problème avec votre paiement pour {{nom_formation}}. Merci de mettre à jour vos informations de paiement pour conserver votre accès.\n\nÀ bientôt,",
+  },
+  template_failed_payment_j3: {
+    subject: '{{nom}}, votre accès est toujours en attente',
+    body: "Bonjour {{nom}},\n\nIl y a 3 jours, nous vous avons informé d'un problème avec votre paiement pour {{nom_formation}}. Votre accès est suspendu jusqu'à régularisation.\n\nMerci de mettre à jour vos informations de paiement dès que possible.\n\nÀ bientôt,",
+  },
+  template_failed_payment_j7: {
+    subject: '{{nom}} — dernier rappel avant suspension définitive',
+    body: "Bonjour {{nom}},\n\nCeci est notre dernier rappel concernant le problème de paiement pour {{nom_formation}}. Sans régularisation de votre part, votre accès sera définitivement suspendu.\n\nMerci d'agir rapidement.\n\nCordialement,",
+  },
+  template_checkout_abandon: {
+    subject: '{{nom}}, vous avez oublié quelque chose…',
+    body: "Bonjour {{nom}},\n\nVous avez commencé à vous inscrire à {{nom_formation}} mais n'avez pas finalisé votre commande.\n\nVotre place est encore disponible : {{lien_checkout}}\n\nÀ bientôt,",
+  },
+  template_testimonial_j30: {
+    subject: '{{nom}}, votre avis nous tient à cœur',
+    body: "Bonjour {{nom}},\n\nVoilà un mois que vous avez rejoint {{nom_formation}} — félicitations !\n\nSi vous avez quelques minutes, votre témoignage nous aiderait énormément :\n{{lien_temoignage}}\n\nMerci d'avance,",
+  },
+  template_testimonial_j60: {
+    subject: '{{nom}}, partagez votre parcours',
+    body: "Bonjour {{nom}},\n\nDeux mois après avoir commencé {{nom_formation}}, nous aimerions connaître votre progression.\n\nPartagez votre témoignage ici : {{lien_temoignage}}\n\nMerci beaucoup,",
   },
 }
 
@@ -54,7 +84,7 @@ export async function getEmailTemplate(
       if (parsed.subject && parsed.body) {
         return { subject: inject(parsed.subject, variables), body: inject(parsed.body, variables) }
       }
-    } catch { /* fallback */ }
+    } catch { /* fallback to default */ }
   }
 
   const def = DEFAULTS[configType]

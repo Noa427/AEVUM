@@ -16,6 +16,10 @@ export const ALLOWED_CONFIG_TYPES = [
   'support_email_enabled',
   'support_auto_reply',
   'politique_remboursement',
+  'template_checkout_abandon',
+  'template_testimonial_j30',
+  'template_testimonial_j60',
+  'testimonial_url',
 ] as const
 
 export const VALID_TRIGGER_TYPES = ['delay_after_purchase', 'specific_date', 'payment_failed', 'manual'] as const
@@ -103,3 +107,10 @@ export const ManualSendSchema = z.object({
   student_email: z.string().email().max(254),
   config_type: z.string().min(1).max(100),
 })
+
+export const FormationSchema = z.object({
+  name: z.string().min(1).max(200),
+  stripe_product_id: z.string().max(200).optional().nullable(),
+})
+
+export const FormationUpdateSchema = FormationSchema.partial()
