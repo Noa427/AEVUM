@@ -16,7 +16,7 @@ import {
   AutomationSchema, AutomationUpdateSchema, AiGenerateSchema, AiImproveSchema,
   ForgotPasswordSchema, ResetPasswordSchema,
   ALLOWED_CONFIG_TYPES, TestSendSchema, TEMPLATE_CONFIG_TYPES,
-  PauseSchema,
+  PauseSchema, BlacklistAddSchema,
 } from '../schemas/client'
 
 export const clientAuthRouter = Router()
@@ -580,6 +580,71 @@ clientAuthRouter.delete('/pause', authenticateClient, async (req, res) => {
     status: 'ok',
   })
   if (logError) console.warn('[pause] activity log insert failed:', logError.message)
+
+  res.json({ ok: true })
+})
+
+// GET /client/blacklist
+clientAuthRouter.get('/blacklist', authenticateClient, async (req, res) => {
+  const clientId = (req as any).clientId as string
+
+  const { data, error } = await supabase
+    .from('client_blacklist')
+    .select('email, reason, blacklisted_at')
+    .eq('client_id', clientId)
+    .order('blacklisted_at', { ascending: false })
+
+  if (error) return res.status(500).json({ error: error.message })
+
+  res.json(data ?? [])
+})
+
+// POST /client/blacklist
+clientAuthRouter.post('/blacklist', authenticateClient, validate(BlacklistAddSchema), async (req, res) => {
+  const clientId = (req as any).clientId as string
+  const { email, reason } = req.body
+
+  const { error } = await supabase
+    .from('client_blacklist')
+    .insert({ client_id: clientId, email: email.toLowerCase(), reason: reason ?? null })
+
+  if (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'Cet email est déjà blacklisté' })
+    return res.status(500).json({ error: error.message })
+  }
+
+  const { error: logError } = await supabase.from('activity_logs').insert({
+    client_id: clientId,
+    action_type: 'blacklist_add',
+    payload_json: { email: email.toLowerCase(), reason: reason ?? null },
+    status: 'ok',
+  })
+  if (logError) console.warn('[blacklist] log insert failed:', logError.message)
+
+  res.status(201).json({ ok: true })
+})
+
+// DELETE /client/blacklist/:email
+clientAuthRouter.delete('/blacklist/:email', authenticateClient, async (req, res) => {
+  const clientId = (req as any).clientId as string
+  const email = decodeURIComponent(req.params.email).toLowerCase()
+
+  const { error, count } = await supabase
+    .from('client_blacklist')
+    .delete({ count: 'exact' })
+    .eq('client_id', clientId)
+    .eq('email', email)
+
+  if (error) return res.status(500).json({ error: error.message })
+  if (count === 0) return res.status(404).json({ error: 'Email introuvable dans la blacklist' })
+
+  const { error: logError } = await supabase.from('activity_logs').insert({
+    client_id: clientId,
+    action_type: 'blacklist_remove',
+    payload_json: { email },
+    status: 'ok',
+  })
+  if (logError) console.warn('[blacklist] log insert failed:', logError.message)
 
   res.json({ ok: true })
 })
