@@ -30,7 +30,7 @@ async function getApiKey(): Promise<string> {
 
 async function callAnthropicMessage(userMessage: string, model: string, system?: string): Promise<string> {
   const apiKey = await getApiKey()
-  const anthropic = new Anthropic({ apiKey })
+  const anthropic = new Anthropic({ apiKey, timeout: 30_000 })
   return withRetry(async () => {
     const message = await anthropic.messages.create({
       model,
