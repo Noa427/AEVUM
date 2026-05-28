@@ -16,6 +16,25 @@ webhooksRouter.post('/:clientId', verifyStripeSignature, async (req, res) => {
   const event = (req as any).stripeEvent as any
   const clientId = req.params.clientId as string
 
+  // Idempotence — rejeter les événements déjà traités (retry Stripe ou redémarrage serveur)
+  const { count: alreadyProcessed } = await supabase
+    .from('activity_logs')
+    .select('*', { count: 'exact', head: true })
+    .eq('client_id', clientId)
+    .eq('action_type', 'stripe_event_received')
+    .contains('payload_json', { event_id: event.id })
+
+  if (alreadyProcessed && alreadyProcessed > 0) {
+    return res.json({ ok: true })
+  }
+
+  await supabase.from('activity_logs').insert({
+    client_id: clientId,
+    action_type: 'stripe_event_received',
+    payload_json: { event_id: event.id, event_type: event.type },
+    status: 'ok',
+  })
+
   res.json({ ok: true })
 
   const { data: client } = await supabase
