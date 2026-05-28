@@ -3,6 +3,7 @@ import 'dotenv/config'
 const REQUIRED_ENV = [
   'JWT_SECRET', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY',
   'SUPABASE_ANON_KEY', 'ENCRYPTION_KEY', 'FRONTEND_URL', 'VITRINE_URL', 'BACKEND_URL',
+  'RESEND_API_KEY', 'RESEND_FROM_EMAIL',
 ]
 const missing = REQUIRED_ENV.filter(k => !process.env[k])
 if (missing.length) {
