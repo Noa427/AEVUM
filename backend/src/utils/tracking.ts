@@ -12,6 +12,7 @@ export async function insertTrackingRow(opts: {
   studentEmail: string
   configType: string
   automationId?: string
+  channel?: string
 }): Promise<string> {
   const id = randomUUID()
   const { error } = await supabase.from('email_tracking').insert({
@@ -20,6 +21,7 @@ export async function insertTrackingRow(opts: {
     student_email: opts.studentEmail.toLowerCase(),
     config_type: opts.configType,
     automation_id: opts.automationId ?? null,
+    channel: opts.channel ?? 'email',
     sent_at: new Date().toISOString(),
   })
   if (error) console.warn('[tracking] insert failed:', error.message)

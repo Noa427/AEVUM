@@ -20,6 +20,10 @@ export const ALLOWED_CONFIG_TYPES = [
   'template_testimonial_j30',
   'template_testimonial_j60',
   'testimonial_url',
+  'template_predunning',
+  'template_churn_reengagement',
+  'template_coaching_j14',
+  'rapport_video_active',
 ] as const
 
 export const VALID_TRIGGER_TYPES = ['delay_after_purchase', 'specific_date', 'payment_failed', 'manual'] as const
