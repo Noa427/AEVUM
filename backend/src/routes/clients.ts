@@ -7,23 +7,25 @@ import { generateClientCredentials } from '../utils/generateClientCredentials'
 export const clientsRouter = Router()
 clientsRouter.use(requireAuth)
 
-clientsRouter.get('/', async (req, res) => {
-  const userId = (req as any).userId
+clientsRouter.get('/', async (_req, res) => {
   const { data, error } = await supabase
     .from('clients')
-    .select('*')
-    .eq('user_id', userId)
+    .select('id, user_id, name, email, auto_mode, paused_until, whatsapp_phone_number_id, whatsapp_active, must_change_password, created_at')
     .order('created_at', { ascending: false })
   if (error) return res.status(500).json({ error: error.message })
 
   const clientIds = (data ?? []).map(c => c.id)
+
+  const startOfMonth = new Date()
+  startOfMonth.setDate(1)
+  startOfMonth.setHours(0, 0, 0, 0)
 
   const [taskRows, logRows] = await Promise.all([
     clientIds.length
       ? supabase.from('pending_tasks').select('client_id').in('client_id', clientIds).eq('status', 'pending')
       : { data: [] },
     clientIds.length
-      ? supabase.from('activity_logs').select('client_id').in('client_id', clientIds).eq('status', 'sent')
+      ? supabase.from('activity_logs').select('client_id').in('client_id', clientIds).eq('status', 'sent').gte('created_at', startOfMonth.toISOString())
       : { data: [] },
   ])
 
@@ -41,12 +43,10 @@ clientsRouter.get('/', async (req, res) => {
 })
 
 clientsRouter.get('/:id', async (req, res) => {
-  const userId = (req as any).userId
   const { data, error } = await supabase
     .from('clients')
-    .select('*')
+    .select('id, user_id, name, email, auto_mode, paused_until, whatsapp_phone_number_id, whatsapp_active, must_change_password, created_at')
     .eq('id', req.params.id)
-    .eq('user_id', userId)
     .single()
   if (error || !data) return res.status(404).json({ error: 'Client introuvable' })
   res.json(data)
@@ -128,12 +128,10 @@ const PILIER_CONFIG_TYPES = [
 ] as const
 
 clientsRouter.get('/:id/configs', async (req, res) => {
-  const userId = (req as any).userId
   const { data: client } = await supabase
     .from('clients')
     .select('id')
     .eq('id', req.params.id)
-    .eq('user_id', userId)
     .single()
   if (!client) return res.status(404).json({ error: 'Client introuvable' })
 
