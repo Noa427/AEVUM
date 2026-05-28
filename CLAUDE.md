@@ -44,6 +44,7 @@
 - Phase 2 — Logique métier complète : TERMINÉE
 - Phase 3 — Auth client + portail Vitrine : backend TERMINÉ, pages Vitrine EN COURS
 - Audit 2026-05-28 : URL webhook corrigée, code mort supprimé (portal.ts, supabase-server.ts, stubs history/tasks)
+- Hardening sécurité 2026-05-28 : branche `securite` — 10 corrections (E1-E3, M4-M8, F9-F15), 0 vulnérabilité npm
 
 ## STRUCTURE DES FICHIERS
 
@@ -110,9 +111,10 @@ Backend (.env) :
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`
 - `ENCRYPTION_KEY` — AES-256 (32 bytes hex)
 - `JWT_SECRET` — partagé avec Vitrine
-- `RESEND_API_KEY`, `RESEND_FROM_EMAIL`
+- `RESEND_API_KEY`, `RESEND_FROM_EMAIL` — adresse expéditeur complète (ex: noreply@tondomaine.com)
 - `STRIPE_SECRET_KEY`
 - `FRONTEND_URL`, `VITRINE_URL`, `BACKEND_URL`
+- `NODE_ENV=production` — obligatoire en prod (masque stack traces)
 - `ANTHROPIC_API_KEY` — optionnel (mode auto)
 - `ENABLE_CRON=true` — activer le cron sur Render
 
@@ -185,6 +187,10 @@ Vitrine (.env) :
 | 014 | Table email_tracking + RLS | Appliquée |
 | 015 | Table formations | Appliquée |
 | 016 | RLS policies sur email_tracking, formations, client_blacklist | Appliquée |
+| 017 | Table student_profiles (card_exp, phone, last_lms_activity) | Appliquée |
+| 018 | +whatsapp_phone_number_id, +whatsapp_access_token, +whatsapp_active sur clients | Appliquée |
+| 019 | +channel sur email_tracking | Appliquée |
+| 020 | +token_version SMALLINT sur clients (révocation JWT) | À appliquer |
 
 ## PROCHAINE FEATURE À CODER
 
