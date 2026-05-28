@@ -6,6 +6,7 @@ import { decrypt } from './services/encryption'
 import { insertTrackingRow, injectTracking } from './utils/tracking'
 import { getEmailTemplate } from './utils/getEmailTemplate'
 import { sendEmailWithChannels } from './utils/sendMultiChannel'
+import { generateWeeklyVideo, WeeklyStats } from './services/videoreport'
 
 async function recoverStuckTasks(): Promise<void> {
   const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString()
@@ -946,6 +947,90 @@ export async function runStudentCoaching(): Promise<void> {
           status: 'failed',
         })
       }
+    }
+  }
+}
+
+// ── Feature 17 : Rapport vidéo hebdomadaire ────────────────────────────────
+
+export async function sendVideoReport(): Promise<void> {
+  const now = new Date()
+  if (now.getUTCDay() !== 1 || now.getUTCHours() !== 8) return
+
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
+
+  const { data: videoConfigs } = await supabase
+    .from('client_configs')
+    .select('client_id, encrypted_value')
+    .eq('config_type', 'rapport_video_active')
+
+  const activeClientIds = new Set<string>()
+  for (const cfg of videoConfigs ?? []) {
+    try {
+      const val = decrypt(cfg.encrypted_value)
+      if (val === 'true' || JSON.parse(val) === true) activeClientIds.add(cfg.client_id)
+    } catch { /* skip */ }
+  }
+
+  if (activeClientIds.size === 0) return
+  console.log(`[cron:video] ${activeClientIds.size} client(s) avec rapport vidéo actif`)
+
+  const { data: clients } = await supabase
+    .from('clients')
+    .select('id, name, email, paused_until')
+    .in('id', [...activeClientIds])
+
+  for (const client of clients ?? []) {
+    if ((client as any).paused_until && new Date() < new Date((client as any).paused_until)) continue
+
+    try {
+      const { data: logs } = await supabase
+        .from('activity_logs')
+        .select('action_type, payload_json')
+        .eq('client_id', client.id)
+        .eq('status', 'sent')
+        .gte('created_at', weekAgo)
+
+      const newStudents = (logs ?? []).filter((l: any) => l.action_type === 'onboarding_j0_email').length
+      const emailsSent = (logs ?? []).length
+      const recoveredLogs = (logs ?? []).filter((l: any) => l.action_type === 'payment_recovered')
+      const recovered = recoveredLogs.length
+      const recoveredAmount = recoveredLogs.reduce(
+        (sum: number, l: any) => sum + ((l.payload_json as any)?.amount ?? 0), 0
+      )
+
+      const weekLabel = `Semaine du ${new Date(weekAgo).toLocaleDateString('fr-FR', {
+        day: 'numeric', month: 'long', year: 'numeric',
+      })}`
+
+      const stats: WeeklyStats = { clientName: client.name, newStudents, emailsSent, recovered, recoveredAmount, weekLabel }
+
+      const videoUrl = await generateWeeklyVideo(client.id, stats)
+      if (!videoUrl) throw new Error('URL vidéo vide')
+
+      await sendEmail({
+        to: client.email,
+        subject: `Votre rapport vidéo — ${weekLabel}`,
+        html: `<p>Bonjour ${client.name},</p><p>Votre rapport vidéo de la semaine est prêt :</p><p><a href="${videoUrl}">Voir le rapport</a></p><p>Ce lien expire dans 7 jours.</p><p>AutomatePro</p>`,
+        sender_name: 'AutomatePro',
+      })
+
+      await supabase.from('activity_logs').insert({
+        client_id: client.id,
+        action_type: 'rapport_video_sent',
+        payload_json: { video_url: videoUrl, week: weekLabel },
+        status: 'sent',
+      })
+
+      console.log(`[cron:video] rapport envoyé à ${client.email}`)
+    } catch (err: any) {
+      console.error(`[cron:video] échoué pour ${client.name}:`, err.message)
+      await supabase.from('activity_logs').insert({
+        client_id: client.id,
+        action_type: 'rapport_video_sent',
+        payload_json: { error: err.message },
+        status: 'failed',
+      })
     }
   }
 }
