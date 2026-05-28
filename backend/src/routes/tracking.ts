@@ -27,6 +27,15 @@ trackingRouter.get('/click/:token', async (req, res) => {
   const rawUrl = req.query.url as string | undefined
   if (!rawUrl) return res.status(400).send('URL manquante')
 
+  // Valider que le token existe en DB — empêche l'utilisation comme open redirector
+  const { data: row } = await supabase
+    .from('email_tracking')
+    .select('id')
+    .eq('id', token)
+    .single()
+
+  if (!row) return res.status(404).send('Token invalide')
+
   let decoded: string
   try {
     decoded = decodeURIComponent(rawUrl)
