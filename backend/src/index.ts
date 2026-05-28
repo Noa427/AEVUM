@@ -20,7 +20,6 @@ import { webhooksRouter } from './routes/webhooks'
 import { tasksRouter } from './routes/tasks'
 import { historyRouter } from './routes/history'
 import { simulateRouter } from './routes/simulate'
-import { portalRouter } from './routes/portal'
 import { supportRouter } from './routes/support'
 import { clientAuthRouter } from './routes/clientAuth'
 import { trackingRouter } from './routes/tracking'
@@ -56,7 +55,6 @@ app.use('/api/webhooks', webhookLimiter, express.raw({ type: 'application/json' 
 app.use('/api/tasks', tasksRouter)
 app.use('/api/history', historyRouter)
 app.use('/api/simulate', simulateLimiter, simulateRouter)
-app.use('/api/portal', portalCors, portalLimiter, portalRouter)
 app.use('/client', portalCors, clientAuthRouter)
 app.use('/api/support', adminCors, apiLimiter, supportRouter)
 app.use('/track', trackingRouter)
