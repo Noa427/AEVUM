@@ -5,6 +5,7 @@ import { sendEmail } from './services/resend'
 import { decrypt } from './services/encryption'
 import { insertTrackingRow, injectTracking } from './utils/tracking'
 import { getEmailTemplate } from './utils/getEmailTemplate'
+import { sendEmailWithChannels } from './utils/sendMultiChannel'
 
 async function recoverStuckTasks(): Promise<void> {
   const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString()
@@ -170,18 +171,16 @@ async function handleUpsellJob(job: any): Promise<void> {
     if (!ctx.customer_email) throw new Error('customer_email manquant')
     const aiResponse = await callClaude(prompt_template, 'claude-sonnet-4-6')
     const { subject, body_html } = parseClaudeResponse(aiResponse)
-    const html = wrapEmailHtml(body_html, ctx.sender_name ?? 'Formateur')
-    const trackingToken = await insertTrackingRow({
+    const rawHtml = wrapEmailHtml(body_html, ctx.sender_name ?? 'Formateur')
+    const trackingToken = await sendEmailWithChannels({
       clientId: job.client_id,
       studentEmail: ctx.customer_email,
       configType: 'upsell',
-    })
-    await sendEmail({
       to: ctx.customer_email,
       subject,
-      html: injectTracking(html, trackingToken, process.env.BACKEND_URL!),
-      sender_name: ctx.sender_name ?? 'Formateur',
-      reply_to: (client as any)?.email,
+      rawHtml,
+      senderName: ctx.sender_name ?? 'Formateur',
+      replyTo: (client as any)?.email,
     })
     await supabase
       .from('pending_tasks')
@@ -258,20 +257,27 @@ async function handleCheckoutAbandonJob(job: any): Promise<void> {
 
   const subject = injectVars(parsed.subject)
   const body = injectVars(parsed.body)
-  const html = wrapEmailHtml(body.replace(/\n/g, '<br>'), senderName)
-  const trackingToken = await insertTrackingRow({
-    clientId: job.client_id,
-    studentEmail: customerEmail,
-    configType: 'template_checkout_abandon',
-  })
+  const rawHtml = wrapEmailHtml(body.replace(/\n/g, '<br>'), senderName)
+  let abandonConfigJson: Record<string, any> | undefined
+  try { abandonConfigJson = parsed } catch { /* parsed déjà parsé */ }
 
   try {
-    await sendEmail({ to: customerEmail, subject, html: injectTracking(html, trackingToken, process.env.BACKEND_URL!), sender_name: senderName })
+    const trackingToken = await sendEmailWithChannels({
+      clientId: job.client_id,
+      studentEmail: customerEmail,
+      configType: 'template_checkout_abandon',
+      configJson: abandonConfigJson,
+      templateVars: vars,
+      to: customerEmail,
+      subject,
+      rawHtml,
+      senderName,
+    })
     await markDone()
     await supabase.from('activity_logs').insert({
       client_id: job.client_id,
       action_type: 'checkout_abandon_sent',
-      payload_json: { to: customerEmail, subject, tracking_id: trackingToken },
+      payload_json: { to: customerEmail, subject },
       status: 'sent',
     })
     console.log(`[cron] checkout_abandon → ${customerEmail}`)
@@ -359,14 +365,17 @@ export async function runCustomAutomations(): Promise<void> {
 
     try {
       const senderName = senderMap.get(automation.client_id) ?? client.name
-      const html = wrapEmailHtml(automation.body.replace(/\n/g, '<br>'), senderName)
-      const trackingToken = await insertTrackingRow({
+      const rawHtml = wrapEmailHtml(automation.body.replace(/\n/g, '<br>'), senderName)
+      const trackingToken = await sendEmailWithChannels({
         clientId: automation.client_id,
         studentEmail: client.email,
         configType: 'custom_automation',
         automationId: automation.id,
+        to: client.email,
+        subject: automation.subject,
+        rawHtml,
+        senderName,
       })
-      await sendEmail({ to: client.email, subject: automation.subject, html: injectTracking(html, trackingToken, process.env.BACKEND_URL!), sender_name: senderName })
 
       await supabase.from('activity_logs').insert({
         client_id: automation.client_id,
