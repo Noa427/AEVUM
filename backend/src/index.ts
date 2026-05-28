@@ -54,7 +54,12 @@ const portalCors = cors({ origin: process.env.VITRINE_URL, credentials: false })
 app.set('trust proxy', 1)
 
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  },
   hsts: { maxAge: 31536000, includeSubDomains: true },
 }))
 
@@ -73,7 +78,7 @@ app.use('/api/webhooks', webhookLimiter, express.raw({ type: 'application/json' 
 app.use('/api/tasks', tasksRouter)
 app.use('/api/history', historyRouter)
 app.use('/api/simulate', simulateLimiter, simulateRouter)
-app.use('/client', portalCors, clientAuthRouter)
+app.use('/client', portalCors, portalLimiter, clientAuthRouter)
 app.use('/api/support', adminCors, apiLimiter, supportRouter)
 app.use('/track', trackingRouter)
 
