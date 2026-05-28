@@ -10,6 +10,7 @@ import { validate } from '../middleware/validate'
 import { callClaudeChat } from '../services/claude'
 import { parseClaudeResponse, wrapEmailHtml } from '../services/templates'
 import { sendEmail } from '../services/resend'
+import { validateWhatsApp } from '../services/whatsapp'
 import { getEmailTemplate } from '../utils/getEmailTemplate'
 import {
   LoginSchema, PasswordSchema, EmailSchema, ConfigSchema,
@@ -182,7 +183,7 @@ clientAuthRouter.get('/me', authenticateClient, async (req, res) => {
 
   const { data, error } = await supabase
     .from('clients')
-    .select('client_email, must_change_password, created_at, paused_until')
+    .select('client_email, must_change_password, created_at, paused_until, whatsapp_active')
     .eq('id', clientId)
     .single()
 
@@ -193,6 +194,7 @@ clientAuthRouter.get('/me', authenticateClient, async (req, res) => {
     mustChangePassword: data.must_change_password,
     createdAt: data.created_at,
     pausedUntil: data.paused_until ?? null,
+    whatsappConnected: data.whatsapp_active ?? false,
   })
 })
 
@@ -257,6 +259,52 @@ clientAuthRouter.put('/settings/email', authenticateClient, validate(EmailSchema
 
   if (updateError) return res.status(500).json({ error: updateError.message })
 
+  res.json({ ok: true })
+})
+
+// POST /client/settings/whatsapp
+clientAuthRouter.post('/settings/whatsapp', authenticateClient, async (req, res) => {
+  const clientId = (req as any).clientId as string
+  const { phone_number_id, access_token } = req.body ?? {}
+
+  if (!phone_number_id || !access_token) {
+    return res.status(400).json({ error: 'phone_number_id et access_token requis' })
+  }
+
+  try {
+    const { phone_number } = await validateWhatsApp(phone_number_id as string, access_token as string)
+
+    const { error } = await supabase
+      .from('clients')
+      .update({
+        whatsapp_phone_number_id: phone_number_id,
+        whatsapp_access_token: encrypt(access_token as string),
+        whatsapp_active: true,
+      })
+      .eq('id', clientId)
+
+    if (error) return res.status(500).json({ error: error.message })
+
+    res.json({ success: true, phone_number })
+  } catch (err: any) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+// DELETE /client/settings/whatsapp
+clientAuthRouter.delete('/settings/whatsapp', authenticateClient, async (req, res) => {
+  const clientId = (req as any).clientId as string
+
+  const { error } = await supabase
+    .from('clients')
+    .update({
+      whatsapp_phone_number_id: null,
+      whatsapp_access_token: null,
+      whatsapp_active: false,
+    })
+    .eq('id', clientId)
+
+  if (error) return res.status(500).json({ error: error.message })
   res.json({ ok: true })
 })
 
