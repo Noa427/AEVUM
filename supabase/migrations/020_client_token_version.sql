@@ -1,0 +1,2 @@
+ALTER TABLE clients
+  ADD COLUMN token_version SMALLINT NOT NULL DEFAULT 0;

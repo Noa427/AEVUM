@@ -69,25 +69,27 @@ clientAuthRouter.post('/login', loginLimiter, validate(LoginSchema), async (req,
 
   const { data: client } = await supabase
     .from('clients')
-    .select('id, client_email, password_hash')
+    .select('id, client_email, password_hash, token_version')
     .eq('client_email', email.toLowerCase())
     .single()
 
   if (!client || !client.password_hash) {
     await randomDelay()
+    console.warn(`[auth] login échoué — email introuvable: ${email.toLowerCase()}`)
     return res.status(401).json({ error: 'Identifiants incorrects' })
   }
 
   const valid = await argon2.verify(client.password_hash, password)
   if (!valid) {
     await randomDelay()
+    console.warn(`[auth] login échoué — mauvais mot de passe: ${email.toLowerCase()}`)
     return res.status(401).json({ error: 'Identifiants incorrects' })
   }
 
   const token = jwt.sign(
-    { clientId: client.id, email: client.client_email },
+    { clientId: client.id, email: client.client_email, tv: client.token_version ?? 0 },
     process.env.JWT_SECRET!,
-    { expiresIn: '7d' }
+    { algorithm: 'HS256', expiresIn: '7d' }
   )
 
   res.json({ token })
@@ -136,12 +138,12 @@ clientAuthRouter.post('/forgot-password', forgotPasswordLimiter, validate(Forgot
 })
 
 // POST /client/reset-password
-clientAuthRouter.post('/reset-password', validate(ResetPasswordSchema), async (req, res) => {
+clientAuthRouter.post('/reset-password', forgotPasswordLimiter, validate(ResetPasswordSchema), async (req, res) => {
   const { token, newPassword } = req.body
 
   let payload: any
   try {
-    payload = jwt.verify(token, process.env.JWT_SECRET!)
+    payload = jwt.verify(token, process.env.JWT_SECRET!, { algorithms: ['HS256'] })
   } catch {
     return res.status(400).json({ error: 'Lien invalide ou expiré' })
   }
@@ -152,7 +154,7 @@ clientAuthRouter.post('/reset-password', validate(ResetPasswordSchema), async (r
 
   const { data: client } = await supabase
     .from('clients')
-    .select('id, password_hash')
+    .select('id, password_hash, token_version')
     .eq('id', payload.clientId)
     .single()
 
@@ -169,7 +171,7 @@ clientAuthRouter.post('/reset-password', validate(ResetPasswordSchema), async (r
 
   const { error: updateError } = await supabase
     .from('clients')
-    .update({ password_hash: newHash, must_change_password: false })
+    .update({ password_hash: newHash, must_change_password: false, token_version: (client.token_version ?? 0) + 1 })
     .eq('id', client.id)
 
   if (updateError) return res.status(500).json({ error: updateError.message })
@@ -205,7 +207,7 @@ clientAuthRouter.put('/settings/password', authenticateClient, validate(Password
 
   const { data, error } = await supabase
     .from('clients')
-    .select('password_hash')
+    .select('password_hash, token_version')
     .eq('id', clientId)
     .single()
 
@@ -218,7 +220,7 @@ clientAuthRouter.put('/settings/password', authenticateClient, validate(Password
 
   const { error: updateError } = await supabase
     .from('clients')
-    .update({ password_hash: newHash, must_change_password: false })
+    .update({ password_hash: newHash, must_change_password: false, token_version: (data.token_version ?? 0) + 1 })
     .eq('id', clientId)
 
   if (updateError) return res.status(500).json({ error: updateError.message })
