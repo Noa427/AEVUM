@@ -576,3 +576,367 @@ export async function runTestimonialEmails(): Promise<void> {
     }
   }
 }
+
+// ── Feature 14 : Pré-dunning CB expirante ──────────────────────────────────
+
+export async function runPredunning(): Promise<void> {
+  if (new Date().getUTCHours() !== 8) return
+
+  const now = new Date()
+  const in14Days = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString()
+
+  const { data: profiles } = await supabase
+    .from('student_profiles')
+    .select('client_id, email, card_exp')
+    .gte('card_exp', now.toISOString())
+    .lte('card_exp', in14Days)
+
+  if (!profiles || profiles.length === 0) return
+  console.log(`[cron:predunning] ${profiles.length} profil(s) à vérifier`)
+
+  for (const profile of profiles) {
+    const { client_id: clientId, email, card_exp } = profile
+
+    const { data: clientRow } = await supabase.from('clients').select('paused_until').eq('id', clientId).single()
+    if (clientRow?.paused_until && new Date() < new Date(clientRow.paused_until)) continue
+
+    const { data: configRow } = await supabase
+      .from('client_configs')
+      .select('encrypted_value')
+      .eq('client_id', clientId)
+      .eq('config_type', 'template_predunning')
+      .single()
+    if (!configRow?.encrypted_value) continue
+
+    let config: Record<string, any>
+    try { config = JSON.parse(decrypt(configRow.encrypted_value)) } catch { continue }
+    if (config.active === false) continue
+
+    const since30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    const { count: alreadySent } = await supabase
+      .from('email_tracking')
+      .select('*', { count: 'exact', head: true })
+      .eq('client_id', clientId)
+      .eq('student_email', email.toLowerCase())
+      .eq('config_type', 'template_predunning')
+      .gte('sent_at', since30)
+    if (alreadySent && alreadySent > 0) continue
+
+    const { data: taskRow } = await supabase
+      .from('pending_tasks')
+      .select('context_json')
+      .eq('client_id', clientId)
+      .contains('context_json', { customer_email: email })
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+    const ctx = (taskRow?.context_json as Record<string, any>) ?? {}
+
+    const { data: senderRow } = await supabase
+      .from('client_configs')
+      .select('encrypted_value')
+      .eq('client_id', clientId)
+      .eq('config_type', 'sender_name')
+      .single()
+    const senderName = senderRow?.encrypted_value
+      ? (() => { try { return decrypt(senderRow.encrypted_value) } catch { return 'Formateur' } })()
+      : 'Formateur'
+
+    const expDate = new Date(card_exp)
+    const dateExpiration = `${String(expDate.getUTCMonth() + 1).padStart(2, '0')}/${expDate.getUTCFullYear()}`
+
+    const vars: Record<string, string> = {
+      nom: ctx.customer_name ?? ctx.student_name ?? '',
+      prenom: ctx.student_name ?? '',
+      email,
+      nom_formation: ctx.product_name ?? '',
+      lien_paiement: ctx.payment_link ?? ctx.hosted_invoice_url ?? '',
+      date_expiration: dateExpiration,
+    }
+    const injectV = (text: string) => text.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`)
+
+    try {
+      const subject = injectV(config.subject ?? 'Votre carte bancaire expire bientôt')
+      const body = injectV(config.body ?? '')
+      const html = wrapEmailHtml(body.replace(/\n/g, '<br>'), senderName)
+      const token = await insertTrackingRow({ clientId, studentEmail: email, configType: 'template_predunning', channel: 'email' })
+      await sendEmail({
+        to: email,
+        subject,
+        html: injectTracking(html, token, process.env.BACKEND_URL!),
+        sender_name: senderName,
+      })
+      await supabase.from('activity_logs').insert({
+        client_id: clientId,
+        action_type: 'predunning_sent',
+        payload_json: { to: email, subject, date_expiration: dateExpiration, tracking_id: token },
+        status: 'sent',
+      })
+      console.log(`[cron:predunning] → ${email} (expire ${dateExpiration})`)
+    } catch (err: any) {
+      console.error(`[cron:predunning] échoué pour ${email}:`, err.message)
+      await supabase.from('activity_logs').insert({
+        client_id: clientId,
+        action_type: 'predunning_sent',
+        payload_json: { to: email, error: err.message },
+        status: 'failed',
+      })
+    }
+  }
+}
+
+// ── Feature 15 : Churn prédictif ──────────────────────────────────────────
+
+export async function runChurnDetection(): Promise<void> {
+  if (new Date().getUTCHours() !== 8) return
+
+  const now = new Date()
+  const since21 = new Date(now.getTime() - 21 * 24 * 60 * 60 * 1000).toISOString()
+  const since30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()
+  const since7  = new Date(now.getTime() -  7 * 24 * 60 * 60 * 1000).toISOString()
+
+  const { data: configs } = await supabase
+    .from('client_configs')
+    .select('client_id, encrypted_value')
+    .eq('config_type', 'template_churn_reengagement')
+
+  if (!configs || configs.length === 0) return
+
+  for (const cfg of configs) {
+    let config: Record<string, any>
+    try { config = JSON.parse(decrypt(cfg.encrypted_value)) } catch { continue }
+    if (config.active === false) continue
+
+    const clientId = cfg.client_id
+
+    const { data: clientRow } = await supabase.from('clients').select('paused_until').eq('id', clientId).single()
+    if (clientRow?.paused_until && new Date() < new Date(clientRow.paused_until)) continue
+
+    const { data: tasks } = await supabase
+      .from('pending_tasks')
+      .select('context_json, created_at')
+      .eq('client_id', clientId)
+      .lt('created_at', since7)
+      .order('created_at', { ascending: true })
+      .limit(2000)
+
+    const emailsSeen = new Set<string>()
+    const candidates: Array<{ email: string; ctx: Record<string, any> }> = []
+    for (const t of tasks ?? []) {
+      const email = (t.context_json as any)?.customer_email as string | undefined
+      if (!email || emailsSeen.has(email)) continue
+      emailsSeen.add(email)
+      candidates.push({ email, ctx: t.context_json as Record<string, any> })
+    }
+
+    const { data: senderRow } = await supabase
+      .from('client_configs').select('encrypted_value')
+      .eq('client_id', clientId).eq('config_type', 'sender_name').single()
+    const senderName = senderRow?.encrypted_value
+      ? (() => { try { return decrypt(senderRow.encrypted_value) } catch { return 'Formateur' } })()
+      : 'Formateur'
+
+    for (const { email, ctx } of candidates) {
+      const { data: profileRow } = await supabase
+        .from('student_profiles')
+        .select('last_lms_activity')
+        .eq('client_id', clientId)
+        .eq('email', email.toLowerCase())
+        .single()
+
+      let isChurn = false
+
+      if (profileRow?.last_lms_activity) {
+        isChurn = new Date(profileRow.last_lms_activity) < new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000)
+      } else {
+        const [openRes, clickRes] = await Promise.all([
+          supabase
+            .from('email_tracking')
+            .select('*', { count: 'exact', head: true })
+            .eq('client_id', clientId)
+            .eq('student_email', email.toLowerCase())
+            .not('opened_at', 'is', null)
+            .gte('sent_at', since21),
+          supabase
+            .from('email_tracking')
+            .select('*', { count: 'exact', head: true })
+            .eq('client_id', clientId)
+            .eq('student_email', email.toLowerCase())
+            .not('clicked_at', 'is', null)
+            .gte('sent_at', since30),
+        ])
+        isChurn = (openRes.count ?? 0) === 0 && (clickRes.count ?? 0) === 0
+      }
+
+      if (!isChurn) continue
+
+      const { count: alreadySent } = await supabase
+        .from('email_tracking')
+        .select('*', { count: 'exact', head: true })
+        .eq('client_id', clientId)
+        .eq('student_email', email.toLowerCase())
+        .eq('config_type', 'template_churn_reengagement')
+        .gte('sent_at', since30)
+      if (alreadySent && alreadySent > 0) continue
+
+      const vars: Record<string, string> = {
+        nom: ctx.customer_name ?? ctx.student_name ?? '',
+        prenom: ctx.student_name ?? '',
+        nom_formation: ctx.product_name ?? '',
+        lien_acces: ctx.hosted_invoice_url ?? '',
+      }
+      const injectV = (text: string) => text.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`)
+
+      try {
+        const subject = injectV(config.subject ?? 'On pense à vous !')
+        const body = injectV(config.body ?? '')
+        const html = wrapEmailHtml(body.replace(/\n/g, '<br>'), senderName)
+        const token = await insertTrackingRow({ clientId, studentEmail: email, configType: 'template_churn_reengagement', channel: 'email' })
+        await sendEmail({
+          to: email,
+          subject,
+          html: injectTracking(html, token, process.env.BACKEND_URL!),
+          sender_name: senderName,
+        })
+        await supabase.from('activity_logs').insert({
+          client_id: clientId,
+          action_type: 'churn_reengagement_sent',
+          payload_json: { to: email, subject, tracking_id: token },
+          status: 'sent',
+        })
+        console.log(`[cron:churn] re-engagement → ${email}`)
+      } catch (err: any) {
+        console.error(`[cron:churn] échoué pour ${email}:`, err.message)
+        await supabase.from('activity_logs').insert({
+          client_id: clientId,
+          action_type: 'churn_reengagement_sent',
+          payload_json: { to: email, error: err.message },
+          status: 'failed',
+        })
+      }
+    }
+  }
+}
+
+// ── Feature 19 : Coaching pédagogique J14 ─────────────────────────────────
+
+export async function runStudentCoaching(): Promise<void> {
+  if (new Date().getUTCHours() !== 8) return
+
+  const now = new Date()
+  const since14 = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString()
+  const since7  = new Date(now.getTime() -  7 * 24 * 60 * 60 * 1000).toISOString()
+
+  const { data: configs } = await supabase
+    .from('client_configs')
+    .select('client_id, encrypted_value')
+    .eq('config_type', 'template_coaching_j14')
+
+  if (!configs || configs.length === 0) return
+
+  for (const cfg of configs) {
+    let config: Record<string, any>
+    try { config = JSON.parse(decrypt(cfg.encrypted_value)) } catch { continue }
+    if (config.active === false) continue
+
+    const clientId = cfg.client_id
+
+    const { data: clientRow } = await supabase.from('clients').select('paused_until').eq('id', clientId).single()
+    if (clientRow?.paused_until && new Date() < new Date(clientRow.paused_until)) continue
+
+    const { data: tasks } = await supabase
+      .from('pending_tasks')
+      .select('context_json, created_at')
+      .eq('client_id', clientId)
+      .lt('created_at', since7)
+      .order('created_at', { ascending: true })
+      .limit(2000)
+
+    const emailsSeen = new Set<string>()
+    const candidates: Array<{ email: string; ctx: Record<string, any> }> = []
+    for (const t of tasks ?? []) {
+      const email = (t.context_json as any)?.customer_email as string | undefined
+      if (!email || emailsSeen.has(email)) continue
+      emailsSeen.add(email)
+      candidates.push({ email, ctx: t.context_json as Record<string, any> })
+    }
+
+    const { data: senderRow } = await supabase
+      .from('client_configs').select('encrypted_value')
+      .eq('client_id', clientId).eq('config_type', 'sender_name').single()
+    const senderName = senderRow?.encrypted_value
+      ? (() => { try { return decrypt(senderRow.encrypted_value) } catch { return 'Formateur' } })()
+      : 'Formateur'
+
+    for (const { email, ctx } of candidates) {
+      const { data: profileRow } = await supabase
+        .from('student_profiles')
+        .select('last_lms_activity')
+        .eq('client_id', clientId)
+        .eq('email', email.toLowerCase())
+        .single()
+
+      let needsCoaching = false
+
+      if (profileRow?.last_lms_activity) {
+        needsCoaching = new Date(profileRow.last_lms_activity) < new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      } else {
+        const { count: opens } = await supabase
+          .from('email_tracking')
+          .select('*', { count: 'exact', head: true })
+          .eq('client_id', clientId)
+          .eq('student_email', email.toLowerCase())
+          .not('opened_at', 'is', null)
+          .gte('sent_at', since14)
+        needsCoaching = (opens ?? 0) === 0
+      }
+
+      if (!needsCoaching) continue
+
+      const { count: alreadySent } = await supabase
+        .from('email_tracking')
+        .select('*', { count: 'exact', head: true })
+        .eq('client_id', clientId)
+        .eq('student_email', email.toLowerCase())
+        .eq('config_type', 'template_coaching_j14')
+        .gte('sent_at', since14)
+      if (alreadySent && alreadySent > 0) continue
+
+      const vars: Record<string, string> = {
+        nom: ctx.customer_name ?? ctx.student_name ?? '',
+        prenom: ctx.student_name ?? '',
+        nom_formation: ctx.product_name ?? '',
+        lien_acces: ctx.hosted_invoice_url ?? '',
+      }
+      const injectV = (text: string) => text.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`)
+
+      try {
+        const subject = injectV(config.subject ?? 'Comment avancez-vous dans votre formation ?')
+        const body = injectV(config.body ?? '')
+        const html = wrapEmailHtml(body.replace(/\n/g, '<br>'), senderName)
+        const token = await insertTrackingRow({ clientId, studentEmail: email, configType: 'template_coaching_j14', channel: 'email' })
+        await sendEmail({
+          to: email,
+          subject,
+          html: injectTracking(html, token, process.env.BACKEND_URL!),
+          sender_name: senderName,
+        })
+        await supabase.from('activity_logs').insert({
+          client_id: clientId,
+          action_type: 'coaching_sent',
+          payload_json: { to: email, subject, tracking_id: token },
+          status: 'sent',
+        })
+        console.log(`[cron:coaching] → ${email}`)
+      } catch (err: any) {
+        console.error(`[cron:coaching] échoué pour ${email}:`, err.message)
+        await supabase.from('activity_logs').insert({
+          client_id: clientId,
+          action_type: 'coaching_sent',
+          payload_json: { to: email, error: err.message },
+          status: 'failed',
+        })
+      }
+    }
+  }
+}
