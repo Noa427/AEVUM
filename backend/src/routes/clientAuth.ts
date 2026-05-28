@@ -43,6 +43,7 @@ async function getFormationContext(
   const headerValue = req.headers['x-formation-id'] as string | undefined
 
   if (headerValue) {
+    if (!UUID_RE.test(headerValue)) return { formationId: null, unauthorized: true }
     const { data } = await supabase
       .from('formations')
       .select('id')

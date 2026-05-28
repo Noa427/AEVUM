@@ -4,6 +4,8 @@ import { encrypt, decrypt } from '../services/encryption'
 import { requireAuth } from '../middleware/auth'
 import { generateClientCredentials } from '../utils/generateClientCredentials'
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 export const clientsRouter = Router()
 clientsRouter.use(requireAuth)
 
@@ -43,6 +45,7 @@ clientsRouter.get('/', async (_req, res) => {
 })
 
 clientsRouter.get('/:id', async (req, res) => {
+  if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID invalide' })
   const { data, error } = await supabase
     .from('clients')
     .select('id, user_id, name, email, auto_mode, paused_until, whatsapp_phone_number_id, whatsapp_active, must_change_password, created_at')
@@ -86,6 +89,7 @@ clientsRouter.post('/', async (req, res) => {
 })
 
 clientsRouter.put('/:id', async (req, res) => {
+  if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID invalide' })
   const userId = (req as any).userId
   const { name, email, stripe_webhook_secret, sender_name, auto_mode } = req.body
 
@@ -128,6 +132,7 @@ const PILIER_CONFIG_TYPES = [
 ] as const
 
 clientsRouter.get('/:id/configs', async (req, res) => {
+  if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID invalide' })
   const { data: client } = await supabase
     .from('clients')
     .select('id')
@@ -149,6 +154,7 @@ clientsRouter.get('/:id/configs', async (req, res) => {
 })
 
 clientsRouter.put('/:id/configs', async (req, res) => {
+  if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID invalide' })
   const userId = (req as any).userId
   const { data: client } = await supabase
     .from('clients')
@@ -177,6 +183,7 @@ clientsRouter.put('/:id/configs', async (req, res) => {
 })
 
 clientsRouter.delete('/:id', async (req, res) => {
+  if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID invalide' })
   const userId = (req as any).userId
   const { error } = await supabase
     .from('clients')
