@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import Stripe from 'stripe'
 import { supabase } from '../services/supabase'
 import { decrypt } from '../services/encryption'
 import { buildPromptFailedPayment, getTemplate, parseClaudeResponse, wrapEmailHtml } from '../services/templates'
@@ -7,6 +8,7 @@ import { sendEmail } from '../services/resend'
 import { verifyStripeSignature } from '../middleware/stripe-sig'
 import { getEmailTemplate, templateToAiResponse } from '../utils/getEmailTemplate'
 import { insertTrackingRow, injectTracking } from '../utils/tracking'
+import { sendEmailWithChannels } from '../utils/sendMultiChannel'
 
 export const webhooksRouter = Router()
 
@@ -57,6 +59,10 @@ webhooksRouter.post('/:clientId', verifyStripeSignature, async (req, res) => {
     await handlePaymentRecovered({ event, clientId })
   } else if (event.type === 'checkout.session.expired') {
     await handleCheckoutSessionExpired({ event, clientId })
+  } else if (event.type === 'customer.updated') {
+    await handleCardExpUpdate({ event, clientId })
+  } else if (event.type === 'payment_method.updated') {
+    await handleCardExpUpdate({ event, clientId })
   }
 })
 
@@ -158,13 +164,28 @@ async function handleFailedPayment(opts: {
     if (!context_json.customer_email) throw new Error('customer_email manquant')
     const aiResponse = await callClaude(prompt_template, 'claude-sonnet-4-6')
     const { subject, body_html } = parseClaudeResponse(aiResponse)
-    const html = wrapEmailHtml(body_html, sender_name)
-    const trackingToken = await insertTrackingRow({
+    const rawHtml = wrapEmailHtml(body_html, sender_name)
+    let fpConfigJson: Record<string, any> | undefined
+    try { fpConfigJson = configMap['template_failed_payment_j1'] ? JSON.parse(configMap['template_failed_payment_j1']) : undefined } catch { /* skip */ }
+    const tplVars = {
+      nom: context_json.customer_name ?? context_json.student_name ?? '',
+      prenom: context_json.student_name ?? '',
+      email: context_json.customer_email,
+      nom_formation: context_json.product_name ?? '',
+      lien_paiement: context_json.payment_link ?? context_json.hosted_invoice_url ?? '',
+    }
+    const trackingToken = await sendEmailWithChannels({
       clientId,
       studentEmail: context_json.customer_email,
       configType: 'template_failed_payment_j1',
+      configJson: fpConfigJson,
+      templateVars: tplVars,
+      to: context_json.customer_email,
+      subject,
+      rawHtml,
+      senderName: sender_name,
+      replyTo: client?.email,
     })
-    await sendEmail({ to: context_json.customer_email, subject, html: injectTracking(html, trackingToken, process.env.BACKEND_URL!), sender_name, reply_to: client?.email })
     await supabase
       .from('pending_tasks')
       .update({ status: 'sent', ai_response: aiResponse, processed_at: new Date().toISOString() })
@@ -209,6 +230,22 @@ async function handleCheckoutCompleted(opts: {
     student_name: session.metadata?.student_name ?? session.customer_details?.name,
     payment_intent_id: typeof session.payment_intent === 'string' ? session.payment_intent : (session.payment_intent as any)?.id,
     sender_name,
+  }
+
+  // Stocker le numéro de téléphone dans student_profiles
+  const phone = session.customer_details?.phone ?? null
+  if (context_json.customer_email && phone) {
+    await supabase
+      .from('student_profiles')
+      .upsert(
+        {
+          client_id: clientId,
+          email: (context_json.customer_email as string).toLowerCase(),
+          phone,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'client_id,email' }
+      )
   }
 
   const now = new Date()
@@ -270,13 +307,28 @@ async function handleCheckoutCompleted(opts: {
     if (!context_json.customer_email) throw new Error('customer_email manquant')
     const aiResponse = await callClaude(prompt, 'claude-sonnet-4-6')
     const { subject, body_html } = parseClaudeResponse(aiResponse)
-    const html = wrapEmailHtml(body_html, sender_name)
-    const trackingToken = await insertTrackingRow({
+    const rawHtml = wrapEmailHtml(body_html, sender_name)
+    let j0ConfigJson: Record<string, any> | undefined
+    try { j0ConfigJson = configMap['template_onboarding_j0'] ? JSON.parse(configMap['template_onboarding_j0']) : undefined } catch { /* skip */ }
+    const j0Vars = {
+      nom: context_json.customer_name ?? context_json.student_name ?? '',
+      prenom: context_json.student_name ?? '',
+      email: context_json.customer_email,
+      nom_formation: context_json.product_name ?? '',
+      lien_acces: '',
+    }
+    const trackingToken = await sendEmailWithChannels({
       clientId,
       studentEmail: context_json.customer_email,
       configType: 'template_onboarding_j0',
+      configJson: j0ConfigJson,
+      templateVars: j0Vars,
+      to: context_json.customer_email,
+      subject,
+      rawHtml,
+      senderName: sender_name,
+      replyTo: client?.email,
     })
-    await sendEmail({ to: context_json.customer_email, subject, html: injectTracking(html, trackingToken, process.env.BACKEND_URL!), sender_name, reply_to: client?.email })
     await supabase
       .from('pending_tasks')
       .update({ status: 'sent', ai_response: aiResponse, processed_at: new Date().toISOString() })
@@ -351,4 +403,51 @@ async function handleCheckoutSessionExpired(opts: { event: any; clientId: string
     status: 'pending',
   })
   console.log(`[webhook] checkout_abandon planifié pour ${customerEmail}`)
+}
+
+async function handleCardExpUpdate(opts: { event: any; clientId: string }): Promise<void> {
+  const { event, clientId } = opts
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+  let email: string | null = null
+  let expMonth: number | null = null
+  let expYear: number | null = null
+
+  if (event.type === 'customer.updated') {
+    const customer = event.data.object as any
+    email = customer.email ?? null
+    const pmId = customer.invoice_settings?.default_payment_method
+    if (pmId && typeof pmId === 'string') {
+      try {
+        const pm = await stripe.paymentMethods.retrieve(pmId)
+        expMonth = pm.card?.exp_month ?? null
+        expYear  = pm.card?.exp_year  ?? null
+      } catch { /* skip */ }
+    }
+  } else {
+    // payment_method.updated
+    const pm = event.data.object as any
+    expMonth = pm.card?.exp_month ?? null
+    expYear  = pm.card?.exp_year  ?? null
+    const customerId = typeof pm.customer === 'string' ? pm.customer : null
+    if (customerId) {
+      try {
+        const customer = await stripe.customers.retrieve(customerId)
+        if ((customer as any).deleted) return
+        email = (customer as any).email ?? null
+      } catch { /* skip */ }
+    }
+  }
+
+  if (!email || !expMonth || !expYear) return
+
+  const cardExp = new Date(expYear, expMonth - 1, 1).toISOString()
+
+  const { error } = await supabase
+    .from('student_profiles')
+    .upsert(
+      { client_id: clientId, email: email.toLowerCase(), card_exp: cardExp, updated_at: new Date().toISOString() },
+      { onConflict: 'client_id,email' }
+    )
+  if (error) console.error('[webhook] student_profiles upsert card_exp:', error.message)
+  else console.log(`[webhook] card_exp mise à jour pour ${email} — expire ${expMonth}/${expYear}`)
 }
