@@ -196,4 +196,4 @@ Vitrine (.env) :
 
 ## À FAIRE (dette technique signalée)
 
-- `backend/src/lib/types.ts` — fichier mort (jamais importé) + types obsolètes. À supprimer après confirmation.
+*(aucune dette technique connue)*
