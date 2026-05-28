@@ -5,7 +5,7 @@ import { randomInt } from 'crypto'
 import { supabase } from '../services/supabase'
 import { encrypt, decrypt } from '../services/encryption'
 import { authenticateClient } from '../middleware/authenticateClient'
-import { loginLimiter, portalAuthLimiter, aiLimiter, forgotPasswordLimiter, portalLimiter } from '../middleware/rate-limit'
+import { loginLimiter, aiLimiter, forgotPasswordLimiter, portalLimiter } from '../middleware/rate-limit'
 import { validate } from '../middleware/validate'
 import { callClaudeChat } from '../services/claude'
 import { parseClaudeResponse, wrapEmailHtml } from '../services/templates'
@@ -1109,4 +1109,3 @@ clientAuthRouter.delete('/formations/:id', authenticateClient, async (req, res) 
   res.json({ ok: true })
 })
 
-export default clientAuthRouter
