@@ -7,7 +7,7 @@ import { ClientForm } from '@/components/client-form'
 import { TaskDrawer } from '@/components/task-drawer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Loader2, Check, Copy, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
@@ -48,14 +48,16 @@ interface PilierConfigs {
 }
 
 type Tab = 'tasks' | 'history' | 'settings'
+type HistoryFilter = 'all' | 'onboarding' | 'relance' | 'upsell' | 'custom'
 
 const TYPE_LABELS: Record<string, string> = {
-  failed_payment: 'Impayé',
+  failed_payment: 'Relance paiement',
   onboarding_j0: 'Onboarding J0',
   onboarding_j3: 'Onboarding J+3',
   onboarding_j7: 'Onboarding J+7',
   upsell: 'Upsell',
   support_manual: 'Support IA',
+  custom_automation: 'Personnalisée',
 }
 
 const TYPE_BADGE_CLASS: Record<string, string> = {
@@ -65,16 +67,24 @@ const TYPE_BADGE_CLASS: Record<string, string> = {
   onboarding_j7: 'badge-onboarding-j7',
   upsell: 'badge-upsell',
   support_manual: 'badge-support',
+  custom_automation: 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold bg-secondary text-secondary-foreground border border-border/60',
 }
 
 const ACTION_LABELS: Record<string, string> = {
   failed_payment_email: 'Relance impayé',
-  onboarding_email: 'Email onboarding',
   onboarding_j0_email: 'Bienvenue J0',
   onboarding_j3_email: 'Suivi J+3',
   onboarding_j7_email: 'Engagement J+7',
   upsell_email: 'Upsell',
   support_reply: 'Réponse support',
+  custom_automation: 'Automation personnalisée',
+}
+
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleString('fr-FR', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  })
 }
 
 function relativeTime(dateStr: string) {
@@ -84,6 +94,15 @@ function relativeTime(dateStr: string) {
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return `il y a ${hours}h`
   return `il y a ${Math.floor(hours / 24)}j`
+}
+
+function filterLogs(logs: LogRow[], filter: HistoryFilter): LogRow[] {
+  if (filter === 'all') return logs
+  if (filter === 'onboarding') return logs.filter(l => l.action_type.includes('onboarding'))
+  if (filter === 'relance') return logs.filter(l => l.action_type.includes('payment') || l.action_type.includes('relance'))
+  if (filter === 'upsell') return logs.filter(l => l.action_type.includes('upsell'))
+  if (filter === 'custom') return logs.filter(l => l.action_type === 'custom_automation')
+  return logs
 }
 
 export default function ClientDetailPage() {
@@ -99,7 +118,22 @@ export default function ClientDetailPage() {
 
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [showEdit, setShowEdit] = useState(false)
-  const [showWebhook, setShowWebhook] = useState(false)
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all')
+
+  // Header copy button
+  const [copiedHeader, setCopiedHeader] = useState(false)
+
+  // Settings inline edit
+  const [editingField, setEditingField] = useState<'name' | 'email' | null>(null)
+  const [editValue, setEditValue] = useState('')
+  const [savingField, setSavingField] = useState(false)
+
+  // Settings stripe section
+  const [webhookSecretInput, setWebhookSecretInput] = useState('')
+  const [savingWebhook, setSavingWebhook] = useState(false)
+  const [copiedSettings, setCopiedSettings] = useState(false)
+
+  // Piliers save
   const [savingConfigs, setSavingConfigs] = useState(false)
 
   const loadClient = useCallback(async () => {
@@ -120,7 +154,7 @@ export default function ClientDetailPage() {
 
   const loadHistory = useCallback(async () => {
     try {
-      const res = await api.get<{ data: LogRow[] }>(`/api/history?client_id=${id}&limit=50`)
+      const res = await api.get<{ data: LogRow[] }>(`/api/history?client_id=${id}&limit=100`)
       setLogs(res.data ?? [])
     } catch {}
   }, [id])
@@ -150,6 +184,46 @@ export default function ClientDetailPage() {
     }
   }
 
+  function copyWebhook(onCopied: () => void) {
+    navigator.clipboard.writeText(`${API_URL}/api/webhooks/${client!.id}`)
+    onCopied()
+  }
+
+  function startEdit(field: 'name' | 'email') {
+    setEditingField(field)
+    setEditValue(client![field])
+  }
+
+  async function saveEdit() {
+    if (!editingField) return
+    setSavingField(true)
+    try {
+      const payload = { name: client!.name, email: client!.email, [editingField]: editValue }
+      await api.put(`/api/clients/${id}`, payload)
+      setClient(c => c ? { ...c, [editingField!]: editValue } : c)
+      setEditingField(null)
+      toast.success('Mis à jour')
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur')
+    } finally {
+      setSavingField(false)
+    }
+  }
+
+  async function saveWebhookSecret() {
+    if (!webhookSecretInput.trim()) return
+    setSavingWebhook(true)
+    try {
+      await api.put(`/api/clients/${id}`, { name: client!.name, email: client!.email, stripe_webhook_secret: webhookSecretInput })
+      setWebhookSecretInput('')
+      toast.success('Secret Stripe mis à jour')
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur')
+    } finally {
+      setSavingWebhook(false)
+    }
+  }
+
   function setConfig(key: keyof PilierConfigs, value: string) {
     setConfigs(c => ({ ...c, [key]: value }))
   }
@@ -175,6 +249,10 @@ export default function ClientDetailPage() {
   }
 
   const initials = client.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+  const webhookUrl = `${API_URL}/api/webhooks/${client.id}`
+  const filteredLogs = filterLogs(logs, historyFilter)
+
+  const selectClass = "rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow"
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -189,11 +267,20 @@ export default function ClientDetailPage() {
           <span className="text-foreground font-medium">{client.name}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <Button variant="outline" size="sm" onClick={() => setShowWebhook(true)} className="text-xs gap-1.5">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
-            </svg>
-            Webhook
+          {/* Badge Stripe */}
+          <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            Stripe connecté
+          </span>
+          {/* Copy webhook URL */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs gap-1.5"
+            onClick={() => copyWebhook(() => { setCopiedHeader(true); setTimeout(() => setCopiedHeader(false), 2000) })}
+          >
+            {copiedHeader ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+            {copiedHeader ? 'Copié ✓' : 'Copier URL webhook'}
           </Button>
           <Button variant="outline" size="sm" onClick={() => setShowEdit(true)} className="text-xs gap-1.5">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -240,7 +327,7 @@ export default function ClientDetailPage() {
       <div className="border-b border-border/60">
         <nav className="flex gap-1 -mb-px">
           {([
-            { key: 'tasks', label: `Tâches en attente${tasks.length > 0 ? ` (${tasks.length})` : ''}` },
+            { key: 'tasks', label: `File d'attente${tasks.length > 0 ? ` (${tasks.length})` : ''}` },
             { key: 'history', label: 'Historique' },
             { key: 'settings', label: 'Paramètres' },
           ] as { key: Tab; label: string }[]).map(t => (
@@ -248,9 +335,7 @@ export default function ClientDetailPage() {
               key={t.key}
               onClick={() => setTab(t.key)}
               className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                tab === t.key
-                  ? 'border-primary text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                tab === t.key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               {t.label}
@@ -259,7 +344,7 @@ export default function ClientDetailPage() {
         </nav>
       </div>
 
-      {/* Tab : Tâches en attente */}
+      {/* Tab : File d'attente */}
       {tab === 'tasks' && (
         tasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center border border-border/60 rounded-xl bg-card/40">
@@ -279,28 +364,30 @@ export default function ClientDetailPage() {
                 className="flex items-center justify-between px-4 py-3.5 list-row cursor-pointer hover:bg-accent/40 transition-colors"
                 onClick={() => setSelectedTask(task)}
               >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${TYPE_BADGE_CLASS[task.task_type] ?? 'badge-pending'}`}>
-                      {TYPE_LABELS[task.task_type] ?? task.task_type}
-                    </span>
+                <div className="flex items-center gap-3 min-w-0">
+                  {/* Type badge */}
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold flex-shrink-0 ${TYPE_BADGE_CLASS[task.task_type] ?? 'badge-pending'}`}>
+                    {TYPE_LABELS[task.task_type] ?? task.task_type}
+                  </span>
+                  {/* Élève */}
+                  <div className="min-w-0">
                     {task.context_json.customer_name && (
-                      <span className="text-sm font-medium">{task.context_json.customer_name}</span>
+                      <p className="text-sm font-medium truncate">{task.context_json.customer_name}</p>
                     )}
-                  </div>
-                  <div className="flex items-center gap-2 mt-1">
-                    {task.context_json.customer_email && (
-                      <p className="text-xs text-muted-foreground truncate">{task.context_json.customer_email}</p>
-                    )}
-                    {task.context_json.amount !== undefined && (
-                      <span className="text-xs text-muted-foreground">{task.context_json.amount}€</span>
-                    )}
-                    <span className="text-xs text-muted-foreground">{relativeTime(task.created_at)}</span>
+                    <div className="flex items-center gap-2">
+                      {task.context_json.customer_email && (
+                        <p className="text-xs text-muted-foreground truncate">{task.context_json.customer_email}</p>
+                      )}
+                      {task.context_json.amount !== undefined && (
+                        <span className="text-xs text-muted-foreground flex-shrink-0">{task.context_json.amount}€</span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <Button variant="outline" size="sm" className="text-xs flex-shrink-0 ml-3">
-                  Traiter
-                </Button>
+                <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">{relativeTime(task.created_at)}</span>
+                  <Button variant="outline" size="sm" className="text-xs">Traiter</Button>
+                </div>
               </div>
             ))}
           </div>
@@ -309,45 +396,171 @@ export default function ClientDetailPage() {
 
       {/* Tab : Historique */}
       {tab === 'history' && (
-        logs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center border border-border/60 rounded-xl bg-card/40">
-            <p className="text-sm font-medium text-muted-foreground">Aucun historique pour ce client.</p>
+        <div className="space-y-4">
+          {/* Filtre type */}
+          <div className="flex items-center gap-2">
+            <select
+              value={historyFilter}
+              onChange={e => setHistoryFilter(e.target.value as HistoryFilter)}
+              className={selectClass}
+            >
+              <option value="all">Tous les types</option>
+              <option value="onboarding">Onboarding</option>
+              <option value="relance">Relance</option>
+              <option value="upsell">Upsell</option>
+              <option value="custom">Personnalisé</option>
+            </select>
+            {historyFilter !== 'all' && (
+              <button
+                onClick={() => setHistoryFilter('all')}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                ✕ Réinitialiser
+              </button>
+            )}
           </div>
-        ) : (
-          <div className="border border-border/60 rounded-xl overflow-hidden divide-y divide-border/60 bg-card/30">
-            {logs.map(log => (
-              <div key={log.id} className="flex items-center justify-between px-4 py-3 list-row">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">{ACTION_LABELS[log.action_type] ?? log.action_type}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    {log.payload_json?.to && (
-                      <p className="text-xs text-muted-foreground truncate">{log.payload_json.to}</p>
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(log.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                    </p>
+
+          {filteredLogs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center border border-border/60 rounded-xl bg-card/40">
+              <p className="text-sm font-medium text-muted-foreground">
+                {logs.length === 0 ? 'Aucun historique pour ce client.' : 'Aucun résultat pour ce filtre.'}
+              </p>
+            </div>
+          ) : (
+            <div className="border border-border/60 rounded-xl overflow-hidden divide-y divide-border/60 bg-card/30">
+              {filteredLogs.map(log => (
+                <div key={log.id} className="flex items-center justify-between px-4 py-3 list-row">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{ACTION_LABELS[log.action_type] ?? log.action_type}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {/* Élève */}
+                      {log.payload_json?.to && (
+                        <p className="text-xs text-muted-foreground truncate">{log.payload_json.to}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground flex-shrink-0">{formatDate(log.created_at)}</p>
+                    </div>
                   </div>
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium flex-shrink-0 ml-3 ${
+                    log.status === 'sent' ? 'badge-sent' : 'badge-failed'
+                  }`}>
+                    {log.status === 'sent' ? '✓ envoyé' : '✗ échoué'}
+                  </span>
                 </div>
-                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium flex-shrink-0 ml-3 ${
-                  log.status === 'sent' ? 'badge-sent' : 'badge-failed'
-                }`}>
-                  {log.status === 'sent' ? 'envoyé' : 'échoué'}
-                </span>
-              </div>
-            ))}
-          </div>
-        )
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Tab : Paramètres */}
       {tab === 'settings' && (
-        <div className="space-y-6">
+        <div className="space-y-5">
 
-          {/* Pilier 3 — Support */}
+          {/* Informations de base */}
+          <div className="card-elevated p-5 space-y-4">
+            <h3 className="text-sm font-semibold">Informations</h3>
+            {(['name', 'email'] as const).map(field => (
+              <div key={field} className="flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-muted-foreground mb-0.5">{field === 'name' ? 'Nom' : 'Email'}</p>
+                  {editingField === field ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type={field === 'email' ? 'email' : 'text'}
+                        value={editValue}
+                        onChange={e => setEditValue(e.target.value)}
+                        className="h-8 text-sm"
+                        autoFocus
+                        disabled={savingField}
+                      />
+                      <Button size="sm" className="h-8 gap-1" onClick={saveEdit} disabled={savingField}>
+                        {savingField ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-8" onClick={() => setEditingField(null)} disabled={savingField}>
+                        ✕
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-sm font-medium truncate">{client[field]}</p>
+                  )}
+                </div>
+                {editingField !== field && (
+                  <Button variant="ghost" size="sm" className="text-xs flex-shrink-0" onClick={() => startEdit(field)}>
+                    Modifier
+                  </Button>
+                )}
+              </div>
+            ))}
+            <div>
+              <p className="text-xs text-muted-foreground mb-0.5">Mode IA</p>
+              <p className="text-sm font-medium">{client.auto_mode ? 'Automatique' : 'Manuel'}</p>
+            </div>
+          </div>
+
+          {/* Intégration Stripe */}
+          <div className="card-elevated p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Intégration Stripe</h3>
+              <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                Connecté
+              </span>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1.5">URL Webhook</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 bg-muted rounded-lg px-3 py-2 text-xs font-mono break-all border border-border/60">
+                  {webhookUrl}
+                </code>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-shrink-0 gap-1.5"
+                  onClick={() => copyWebhook(() => { setCopiedSettings(true); setTimeout(() => setCopiedSettings(false), 2000) })}
+                >
+                  {copiedSettings ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copiedSettings ? 'Copié' : 'Copier'}
+                </Button>
+              </div>
+              <a
+                href="https://dashboard.stripe.com/webhooks"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mt-1.5"
+              >
+                <ExternalLink className="w-3 h-3" />
+                Ouvrir Stripe Webhooks
+              </a>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1.5">Mettre à jour le secret</p>
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="whsec_..."
+                  value={webhookSecretInput}
+                  onChange={e => setWebhookSecretInput(e.target.value)}
+                  className="text-sm"
+                  disabled={savingWebhook}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-shrink-0 gap-1.5"
+                  onClick={saveWebhookSecret}
+                  disabled={savingWebhook || !webhookSecretInput.trim()}
+                >
+                  {savingWebhook && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  Enregistrer
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Pilier 3 — Support élève IA */}
           <div className="card-elevated p-5 space-y-4">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-blue-500" />
-              <h3 className="text-sm font-semibold">Pilier 3 — Support client IA</h3>
+              <h3 className="text-sm font-semibold">Pilier 3 — Support élève IA</h3>
             </div>
             <div className="space-y-3 pl-4 border-l border-border/60">
               <label className="flex items-center justify-between gap-3 cursor-pointer">
@@ -415,60 +628,26 @@ export default function ClientDetailPage() {
           </div>
 
           <div className="flex justify-end">
-            <Button onClick={saveConfigs} disabled={savingConfigs} className="btn-glow">
+            <Button onClick={saveConfigs} disabled={savingConfigs} className="btn-glow gap-2">
+              {savingConfigs && <Loader2 className="w-4 h-4 animate-spin" />}
               {savingConfigs ? 'Enregistrement...' : 'Enregistrer les paramètres'}
             </Button>
           </div>
         </div>
       )}
 
-      {/* TaskDrawer */}
       <TaskDrawer
         task={selectedTask}
         onClose={() => setSelectedTask(null)}
         onSent={() => { setSelectedTask(null); loadTasks() }}
       />
 
-      {/* Modal Modifier */}
       <ClientForm
         open={showEdit}
         initialData={client}
         onClose={() => setShowEdit(false)}
         onCreated={() => { setShowEdit(false); loadClient() }}
       />
-
-      {/* Modal Webhook */}
-      <Dialog open={showWebhook} onOpenChange={() => setShowWebhook(false)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>URL Webhook Stripe — {client.name}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Collez cette URL dans Stripe → Webhooks → Ajouter un endpoint.
-            </p>
-            <div className="bg-muted rounded-lg p-3 text-sm font-mono break-all select-all border border-border/60">
-              {API_URL}/api/webhooks/stripe/{client.id}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Événements :{' '}
-              <code className="bg-muted px-1 py-0.5 rounded text-xs">invoice.payment_failed</code>
-              {', '}
-              <code className="bg-muted px-1 py-0.5 rounded text-xs">checkout.session.completed</code>
-            </p>
-            <Button
-              variant="outline"
-              className="w-full gap-2"
-              onClick={() => navigator.clipboard.writeText(`${API_URL}/api/webhooks/stripe/${client.id}`)}
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-              </svg>
-              Copier l&apos;URL
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
