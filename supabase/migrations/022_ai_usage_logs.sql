@@ -10,3 +10,4 @@ CREATE TABLE IF NOT EXISTS ai_usage_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_client_created
   ON ai_usage_logs(client_id, created_at);
+ALTER TABLE ai_usage_logs ENABLE ROW LEVEL SECURITY;
