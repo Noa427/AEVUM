@@ -1,4 +1,4 @@
-# AUTOMATEPRO — Mémoire projet
+# AEVUM APP — Mémoire projet
 
 ## DÉCISIONS ARCHITECTURALES ACTÉES
 *(Ne pas modifier sans accord explicite)*
@@ -44,7 +44,8 @@
 - Phase 2 — Logique métier complète : TERMINÉE
 - Phase 3 — Auth client + portail Vitrine : backend TERMINÉ, pages Vitrine EN COURS
 - Audit 2026-05-28 : URL webhook corrigée, code mort supprimé (portal.ts, supabase-server.ts, stubs history/tasks)
-- Hardening sécurité 2026-05-28 : branche `securite` — 10 corrections (E1-E3, M4-M8, F9-F15), 0 vulnérabilité npm
+- Hardening sécurité 2026-05-28 : 10 corrections (E1-E3, M4-M8, F9-F15), 0 vulnérabilité npm
+- Redesign AEVUM APP 2026-06-01 : renommage, plans Standard/Premium, addons F11/F13/F18 par client, coûts IA auto (tokens), dashboard enrichi MRR/coûts/profit, page clients refaite avec filtres/tri/toggles inline
 
 ## STRUCTURE DES FICHIERS
 
@@ -53,12 +54,12 @@ backend/src/
   index.ts                  — point d'entrée, montage routes, cron
   cron.ts                   — jobs horaires (scheduled_jobs, custom_automations, testimonials)
   routes/
-    clients.ts              — CRUD clients + configs piliers (admin)
-    dashboard.ts            — stats globales (admin)
+    clients.ts              — CRUD clients + configs piliers + addons (admin) — plan/payment_status/addons dans GET/PUT
+    dashboard.ts            — MRR, coûts IA/emails/infra, profit net, options, features Premium (admin)
     history.ts              — logs paginés (admin)
     tasks.ts                — preview + send tâches (admin)
     simulate.ts             — simulation événements Stripe (admin)
-    settings.ts             — clé API Anthropic (admin)
+    settings.ts             — clé API Anthropic + infra_monthly_cost (admin)
     support.ts              — email entrant → classify → réponse IA (admin)
     webhooks.ts             — Stripe events → pending_tasks
     tracking.ts             — /track/open + /track/click (public)
@@ -67,7 +68,7 @@ backend/src/
     supabase.ts             — client Supabase service role
     encryption.ts           — AES-256 encrypt/decrypt
     resend.ts               — sendEmail()
-    claude.ts               — callClaude() + callClaudeChat()
+    claude.ts               — callClaude(prompt, model?, clientId?) + callClaudeChat() — log tokens dans ai_usage_logs
     templates.ts            — prompts IA + parseClaudeResponse + wrapEmailHtml
   middleware/
     auth.ts                 — requireAuth (Supabase JWT admin)
@@ -82,17 +83,17 @@ backend/src/
     getEmailTemplate.ts     — cherche config DB puis fallback defaults
     tracking.ts             — insertTrackingRow + injectTracking (pixel + lien)
   schemas/
-    client.ts               — schémas Zod + ALLOWED_CONFIG_TYPES (19 types)
+    client.ts               — schémas Zod + ALLOWED_CONFIG_TYPES (22 types, +addon_f11/f13/f18)
 
 frontend/
   app/
     page.tsx                — redirect → /dashboard
     (auth)/login/           — page de connexion admin (Supabase Auth)
     (app)/layout.tsx        — layout avec sidebar
-    (app)/dashboard/        — stats globales + activité récente
-    (app)/clients/          — liste clients
+    (app)/dashboard/        — MRR hero + coûts + profit net + 6 stats + tableau coûts/client + options + features Premium
+    (app)/clients/          — plan/addons/paiement inline + filtres/tri cumulatifs + MRR calculé
     (app)/clients/[id]/     — détail client (tâches / historique / paramètres)
-    (app)/settings/         — clé API Anthropic + thème
+    (app)/settings/         — clé API Anthropic + thème + coût infra mensuel
   components/
     sidebar.tsx             — navigation + logout
     client-form.tsx         — modale création/édition client
@@ -131,10 +132,10 @@ Vitrine (.env) :
 - GET       /api/tasks                     → tâches paginées (?status&client_id&page&limit)
 - POST      /api/tasks/:id/preview         → génère ou utilise ai_response pré-peuplé
 - POST      /api/tasks/:id/send            → valide + envoie email
-- GET       /api/dashboard                 → stats globales (clients, pending, emails du mois)
+- GET       /api/dashboard                 → MRR, coûts IA/emails/infra, profit net, options, features Premium, coûts/client
 - GET       /api/history                   → logs paginés (?client_id&date_from&date_to&limit&offset)
 - POST      /api/simulate                  → tâche test (failed_payment | checkout_completed)
-- GET/PUT   /api/settings                  → clé API Anthropic
+- GET/PUT   /api/settings                  → clé API Anthropic + infra_monthly_cost
 - POST      /api/support/inbound           → email entrant → classify → réponse IA
 
 ### Webhook Stripe
@@ -191,13 +192,31 @@ Vitrine (.env) :
 | 018 | +whatsapp_phone_number_id, +whatsapp_access_token, +whatsapp_active sur clients | Appliquée |
 | 019 | +channel sur email_tracking | Appliquée |
 | 020 | +token_version SMALLINT sur clients (révocation JWT) | À appliquer |
+| 021 | +plan (standard/premium) + payment_status (active/unpaid) sur clients | Appliquée |
+| 022 | Table ai_usage_logs (tokens + coût USD par appel IA, RLS activé) | Appliquée |
+
+## MODÈLE D'ABONNEMENT
+
+| Plan | Prix | Features |
+|---|---|---|
+| Standard | 690€/m | Toutes features de base (F1–F13 inclus dans le plan) |
+| Premium | 1200€/m | Standard + F14 (pré-dunning) + F15 (churn) + F16 (WhatsApp) + F17 (rapport vidéo) + F19 (coaching) + F20 (SMS) |
+| Option F11 | +150€/m | Récupération abandons checkout |
+| Option F13 | +300€/m | Récupération vocale IA |
+| Option F18 | +149€/dossier | Module Notaire |
+
+Stockage : `clients.plan` (standard/premium) + `clients.payment_status` (active/unpaid) + `client_configs` pour addon_f11/f13/f18.
 
 ## PROCHAINE FEATURE À CODER
 
 - Pages Vitrine manquantes : /client/history, /client/customize, /client/settings
+- Migration 020 à appliquer (+token_version sur clients)
+- Limites d'usage IA par client (quota mensuel) — avant lancement AEVUM
+- Clé IA admin séparée (provider configurable) pour rapports AEVUM
+- Intégration Stripe côté admin pour paiement automatique clients
+- Rapports IA hebdo sur le business AEVUM (MRR, churn, anomalies)
 - Multi-tenant admin : plusieurs admins, isolation par user_id
-- Statistiques avancées : taux de conversion, revenus récupérés dans le dashboard admin
-- Notifications push/slack sur nouveau webhook reçu
+- Notifications push/Slack sur nouveau webhook reçu
 - Interface de configuration des délais J3/J7 par client
 
 ## À FAIRE (dette technique signalée)
