@@ -29,6 +29,7 @@ interface DashboardData {
   count_premium: number
   count_unpaid: number
   unpaid_amount: number
+  cost_ai_usd: number
   cost_ai_eur: number
   cost_emails_eur: number
   cost_infra_eur: number
