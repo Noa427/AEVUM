@@ -24,6 +24,9 @@ export const ALLOWED_CONFIG_TYPES = [
   'template_churn_reengagement',
   'template_coaching_j14',
   'rapport_video_active',
+  'addon_f11',
+  'addon_f13',
+  'addon_f18',
 ] as const
 
 export const VALID_TRIGGER_TYPES = ['delay_after_purchase', 'specific_date', 'payment_failed', 'manual'] as const
