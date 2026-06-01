@@ -13,7 +13,7 @@ clientsRouter.use(requireAuth)
 clientsRouter.get('/', async (_req, res) => {
   const { data, error } = await supabase
     .from('clients')
-    .select('id, user_id, name, email, auto_mode, paused_until, whatsapp_phone_number_id, whatsapp_active, must_change_password, plan, payment_status, created_at')
+    .select('id, user_id, name, email, plan, payment_status, created_at')
     .order('created_at', { ascending: false })
   if (error) return res.status(500).json({ error: error.message })
 
