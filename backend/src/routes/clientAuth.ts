@@ -10,6 +10,7 @@ import { validate } from '../middleware/validate'
 import { callClaudeChat } from '../services/claude'
 import { parseClaudeResponse, wrapEmailHtml } from '../services/templates'
 import { sendEmail } from '../services/resend'
+import { validateWhatsApp } from '../services/whatsapp'
 import { getEmailTemplate } from '../utils/getEmailTemplate'
 import {
   LoginSchema, PasswordSchema, EmailSchema, ConfigSchema,
@@ -42,6 +43,7 @@ async function getFormationContext(
   const headerValue = req.headers['x-formation-id'] as string | undefined
 
   if (headerValue) {
+    if (!UUID_RE.test(headerValue)) return { formationId: null, unauthorized: true }
     const { data } = await supabase
       .from('formations')
       .select('id')
@@ -68,25 +70,27 @@ clientAuthRouter.post('/login', loginLimiter, validate(LoginSchema), async (req,
 
   const { data: client } = await supabase
     .from('clients')
-    .select('id, client_email, password_hash')
+    .select('id, client_email, password_hash, token_version')
     .eq('client_email', email.toLowerCase())
     .single()
 
   if (!client || !client.password_hash) {
     await randomDelay()
+    console.warn(`[auth] login échoué — email introuvable: ${email.toLowerCase()}`)
     return res.status(401).json({ error: 'Identifiants incorrects' })
   }
 
   const valid = await argon2.verify(client.password_hash, password)
   if (!valid) {
     await randomDelay()
+    console.warn(`[auth] login échoué — mauvais mot de passe: ${email.toLowerCase()}`)
     return res.status(401).json({ error: 'Identifiants incorrects' })
   }
 
   const token = jwt.sign(
-    { clientId: client.id, email: client.client_email },
+    { clientId: client.id, email: client.client_email, tv: client.token_version ?? 0 },
     process.env.JWT_SECRET!,
-    { expiresIn: '7d' }
+    { algorithm: 'HS256', expiresIn: '7d' }
   )
 
   res.json({ token })
@@ -135,12 +139,12 @@ clientAuthRouter.post('/forgot-password', forgotPasswordLimiter, validate(Forgot
 })
 
 // POST /client/reset-password
-clientAuthRouter.post('/reset-password', validate(ResetPasswordSchema), async (req, res) => {
+clientAuthRouter.post('/reset-password', forgotPasswordLimiter, validate(ResetPasswordSchema), async (req, res) => {
   const { token, newPassword } = req.body
 
   let payload: any
   try {
-    payload = jwt.verify(token, process.env.JWT_SECRET!)
+    payload = jwt.verify(token, process.env.JWT_SECRET!, { algorithms: ['HS256'] })
   } catch {
     return res.status(400).json({ error: 'Lien invalide ou expiré' })
   }
@@ -151,7 +155,7 @@ clientAuthRouter.post('/reset-password', validate(ResetPasswordSchema), async (r
 
   const { data: client } = await supabase
     .from('clients')
-    .select('id, password_hash')
+    .select('id, password_hash, token_version')
     .eq('id', payload.clientId)
     .single()
 
@@ -168,7 +172,7 @@ clientAuthRouter.post('/reset-password', validate(ResetPasswordSchema), async (r
 
   const { error: updateError } = await supabase
     .from('clients')
-    .update({ password_hash: newHash, must_change_password: false })
+    .update({ password_hash: newHash, must_change_password: false, token_version: (client.token_version ?? 0) + 1 })
     .eq('id', client.id)
 
   if (updateError) return res.status(500).json({ error: updateError.message })
@@ -182,7 +186,7 @@ clientAuthRouter.get('/me', authenticateClient, async (req, res) => {
 
   const { data, error } = await supabase
     .from('clients')
-    .select('client_email, must_change_password, created_at, paused_until')
+    .select('client_email, must_change_password, created_at, paused_until, whatsapp_active')
     .eq('id', clientId)
     .single()
 
@@ -193,6 +197,7 @@ clientAuthRouter.get('/me', authenticateClient, async (req, res) => {
     mustChangePassword: data.must_change_password,
     createdAt: data.created_at,
     pausedUntil: data.paused_until ?? null,
+    whatsappConnected: data.whatsapp_active ?? false,
   })
 })
 
@@ -203,7 +208,7 @@ clientAuthRouter.put('/settings/password', authenticateClient, validate(Password
 
   const { data, error } = await supabase
     .from('clients')
-    .select('password_hash')
+    .select('password_hash, token_version')
     .eq('id', clientId)
     .single()
 
@@ -216,7 +221,7 @@ clientAuthRouter.put('/settings/password', authenticateClient, validate(Password
 
   const { error: updateError } = await supabase
     .from('clients')
-    .update({ password_hash: newHash, must_change_password: false })
+    .update({ password_hash: newHash, must_change_password: false, token_version: (data.token_version ?? 0) + 1 })
     .eq('id', clientId)
 
   if (updateError) return res.status(500).json({ error: updateError.message })
@@ -257,6 +262,52 @@ clientAuthRouter.put('/settings/email', authenticateClient, validate(EmailSchema
 
   if (updateError) return res.status(500).json({ error: updateError.message })
 
+  res.json({ ok: true })
+})
+
+// POST /client/settings/whatsapp
+clientAuthRouter.post('/settings/whatsapp', authenticateClient, async (req, res) => {
+  const clientId = (req as any).clientId as string
+  const { phone_number_id, access_token } = req.body ?? {}
+
+  if (!phone_number_id || !access_token) {
+    return res.status(400).json({ error: 'phone_number_id et access_token requis' })
+  }
+
+  try {
+    const { phone_number } = await validateWhatsApp(phone_number_id as string, access_token as string)
+
+    const { error } = await supabase
+      .from('clients')
+      .update({
+        whatsapp_phone_number_id: phone_number_id,
+        whatsapp_access_token: encrypt(access_token as string),
+        whatsapp_active: true,
+      })
+      .eq('id', clientId)
+
+    if (error) return res.status(500).json({ error: error.message })
+
+    res.json({ success: true, phone_number })
+  } catch (err: any) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+// DELETE /client/settings/whatsapp
+clientAuthRouter.delete('/settings/whatsapp', authenticateClient, async (req, res) => {
+  const clientId = (req as any).clientId as string
+
+  const { error } = await supabase
+    .from('clients')
+    .update({
+      whatsapp_phone_number_id: null,
+      whatsapp_access_token: null,
+      whatsapp_active: false,
+    })
+    .eq('id', clientId)
+
+  if (error) return res.status(500).json({ error: error.message })
   res.json({ ok: true })
 })
 
@@ -444,7 +495,7 @@ clientAuthRouter.post('/ai/generate', authenticateClient, aiLimiter, validate(Ai
   ].join('\n')
 
   try {
-    const raw = await callClaudeChat(userMessage, AI_GENERATE_SYSTEM, 'claude-haiku-4-5-20251001')
+    const raw = await callClaudeChat(userMessage, AI_GENERATE_SYSTEM, 'claude-haiku-4-5-20251001', (req as any).clientId)
     const { subject, body_html } = parseClaudeResponse(raw)
     res.json({ subject, body: body_html })
   } catch (err: any) {
@@ -459,7 +510,7 @@ clientAuthRouter.post('/ai/improve', authenticateClient, aiLimiter, validate(AiI
   const userMessage = emailType ? `Type d'email : ${emailType}\n\n${content}` : content
 
   try {
-    const raw = await callClaudeChat(userMessage, AI_IMPROVE_SYSTEM, 'claude-haiku-4-5-20251001')
+    const raw = await callClaudeChat(userMessage, AI_IMPROVE_SYSTEM, 'claude-haiku-4-5-20251001', (req as any).clientId)
     const { subject, body_html } = parseClaudeResponse(raw)
     res.json({ subject, body: body_html })
   } catch (err: any) {

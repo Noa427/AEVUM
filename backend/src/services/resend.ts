@@ -8,8 +8,8 @@ export async function sendEmail(params: {
   reply_to?: string
 }): Promise<void> {
   const resend = new Resend(process.env.RESEND_API_KEY!)
-  const domain = process.env.RESEND_FROM_DOMAIN || 'onboarding@resend.dev'
-  const from = params.sender_name ? `${params.sender_name} <${domain}>` : domain
+  const fromEmail = process.env.RESEND_FROM_EMAIL!
+  const from = params.sender_name ? `${params.sender_name} <${fromEmail}>` : fromEmail
   const { error } = await resend.emails.send({
     from,
     to: params.to,

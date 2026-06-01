@@ -14,6 +14,7 @@ settingsRouter.get('/', async (_req, res) => {
   res.json({
     auto_mode: map['auto_mode'] === 'true',
     has_api_key: !!map['anthropic_api_key'],
+    infra_monthly_cost: parseFloat(map['infra_monthly_cost'] ?? '0') || 0,
   })
 })
 
@@ -35,7 +36,7 @@ settingsRouter.get('/test-anthropic', async (_req, res) => {
 })
 
 settingsRouter.put('/', async (req, res) => {
-  const { auto_mode, anthropic_api_key } = req.body
+  const { auto_mode, anthropic_api_key, infra_monthly_cost } = req.body
 
   if (anthropic_api_key !== undefined) {
     try {
@@ -57,6 +58,12 @@ settingsRouter.put('/', async (req, res) => {
       return res.status(400).json({ error: "Impossible d'activer le mode auto sans clé API" })
     }
     await supabase.from('settings').upsert({ key: 'auto_mode', value: String(auto_mode) })
+  }
+
+  if (infra_monthly_cost !== undefined) {
+    const val = parseFloat(String(infra_monthly_cost))
+    if (isNaN(val) || val < 0) return res.status(400).json({ error: 'Coût infra invalide' })
+    await supabase.from('settings').upsert({ key: 'infra_monthly_cost', value: String(val) })
   }
 
   res.json({ ok: true })
