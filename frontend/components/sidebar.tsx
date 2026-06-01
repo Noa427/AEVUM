@@ -1,15 +1,13 @@
 'use client'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Users, Clock, History, Settings, LogOut, Zap, X } from 'lucide-react'
+import { LayoutDashboard, Users, Settings, LogOut, Zap, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 
 const links = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/clients', label: 'Clients', icon: Users },
-  { href: '/tasks', label: 'Tâches en attente', icon: Clock },
-  { href: '/history', label: 'Historique', icon: History },
   { href: '/settings', label: 'Paramètres', icon: Settings },
 ]
 
@@ -54,7 +52,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
               <Zap className="w-3.5 h-3.5 text-primary" strokeWidth={2.5} />
             </div>
             <span className="font-semibold text-sm tracking-tight text-foreground">
-              Automate<span className="text-primary">Pro</span>
+              AEVUM<span className="text-primary"> APP</span>
             </span>
           </div>
           {/* Bouton fermer sur mobile */}

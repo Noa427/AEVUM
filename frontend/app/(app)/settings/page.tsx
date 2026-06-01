@@ -10,19 +10,25 @@ import { toast } from 'sonner'
 interface SettingsData {
   auto_mode: boolean
   has_api_key: boolean
+  infra_monthly_cost: number
 }
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<SettingsData>({ auto_mode: false, has_api_key: false })
+  const [settings, setSettings] = useState<SettingsData>({ auto_mode: false, has_api_key: false, infra_monthly_cost: 0 })
   const [apiKey, setApiKey] = useState('')
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null)
   const [showKey, setShowKey] = useState(false)
+  const [infraCost, setInfraCost] = useState('')
+  const [savingInfra, setSavingInfra] = useState(false)
   const { theme, setTheme } = useTheme()
 
   useEffect(() => {
-    api.get<SettingsData>('/api/settings').then(setSettings)
+    api.get<SettingsData>('/api/settings').then(s => {
+      setSettings(s)
+      setInfraCost(s.infra_monthly_cost > 0 ? String(s.infra_monthly_cost) : '')
+    })
   }, [])
 
   async function saveApiKey() {
@@ -54,6 +60,21 @@ export default function SettingsPage() {
     }
   }
 
+  async function saveInfraCost() {
+    const val = parseFloat(infraCost)
+    if (isNaN(val) || val < 0) return
+    setSavingInfra(true)
+    try {
+      await api.put('/api/settings', { infra_monthly_cost: val })
+      setSettings(s => ({ ...s, infra_monthly_cost: val }))
+      toast.success('Coût infra enregistré')
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur')
+    } finally {
+      setSavingInfra(false)
+    }
+  }
+
   async function toggleAutoMode(checked: boolean) {
     try {
       await api.put('/api/settings', { auto_mode: checked })
@@ -70,7 +91,7 @@ export default function SettingsPage() {
     <div className="space-y-6 max-w-lg animate-fade-in">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Paramètres</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Configurez votre instance AutomatePro.</p>
+        <p className="text-sm text-muted-foreground mt-0.5">Configurez votre instance AEVUM APP.</p>
       </div>
 
       {/* ── Clé API Anthropic ─────────────────────────────────── */}
@@ -198,7 +219,7 @@ export default function SettingsPage() {
             <p className="text-sm font-semibold">Domaine email</p>
             <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
               Les emails sont envoyés depuis le domaine configuré dans{' '}
-              <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">RESEND_FROM_DOMAIN</code>.
+              <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">RESEND_FROM_EMAIL</code>.
               {' '}Si absent, le domaine de test Resend{' '}
               <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">onboarding@resend.dev</code>{' '}
               est utilisé. Le nom de l&apos;expéditeur est personnalisé par client.
@@ -242,6 +263,40 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* ── Coût infrastructure ──────────────────────────────── */}
+      <div className={sectionClass}>
+        <div className="flex items-start gap-3">
+          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 11h.01M12 11h.01M15 11h.01M4 19h16a2 2 0 002-2V7a2 2 0 00-2-2H4a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-sm font-semibold">Coût infrastructure mensuel</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Render + Vercel + Supabase — utilisé pour calculer le profit net par client.
+            </p>
+            <div className="flex gap-2 mt-3">
+              <div className="relative flex-1">
+                <Input
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder="ex: 140"
+                  value={infraCost}
+                  onChange={e => setInfraCost(e.target.value)}
+                  className="pr-8"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">€</span>
+              </div>
+              <Button onClick={saveInfraCost} disabled={savingInfra || !infraCost} variant="outline" className="flex-shrink-0">
+                {savingInfra ? 'Enregistrement…' : 'Sauvegarder'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* ── À propos ──────────────────────────────────────────── */}
       <div className={`${sectionClass} !space-y-2`}>
         <div className="flex items-start gap-3">
@@ -254,7 +309,7 @@ export default function SettingsPage() {
             <p className="text-sm font-semibold">À propos</p>
             <div className="mt-1 space-y-1">
               <p className="text-xs text-muted-foreground">
-                <span className="text-foreground font-medium">AutomatePro</span> — v1.0.0
+                <span className="text-foreground font-medium">AEVUM APP</span> — v1.0.0
               </p>
               <p className="text-xs text-muted-foreground">
                 Automatisation d&apos;emails Stripe → Claude → Resend.
