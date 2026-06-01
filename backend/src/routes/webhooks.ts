@@ -181,7 +181,7 @@ async function handleFailedPayment(opts: {
 
   try {
     if (!context_json.customer_email) throw new Error('customer_email manquant')
-    const aiResponse = await callClaude(prompt_template, 'claude-sonnet-4-6')
+    const aiResponse = await callClaude(prompt_template, 'claude-sonnet-4-6', clientId)
     const { subject, body_html } = parseClaudeResponse(aiResponse)
     const rawHtml = wrapEmailHtml(body_html, sender_name)
     let fpConfigJson: Record<string, any> | undefined
@@ -324,7 +324,7 @@ async function handleCheckoutCompleted(opts: {
 
   try {
     if (!context_json.customer_email) throw new Error('customer_email manquant')
-    const aiResponse = await callClaude(prompt, 'claude-sonnet-4-6')
+    const aiResponse = await callClaude(prompt, 'claude-sonnet-4-6', clientId)
     const { subject, body_html } = parseClaudeResponse(aiResponse)
     const rawHtml = wrapEmailHtml(body_html, sender_name)
     let j0ConfigJson: Record<string, any> | undefined

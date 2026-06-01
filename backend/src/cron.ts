@@ -170,7 +170,7 @@ async function handleUpsellJob(job: any): Promise<void> {
 
   try {
     if (!ctx.customer_email) throw new Error('customer_email manquant')
-    const aiResponse = await callClaude(prompt_template, 'claude-sonnet-4-6')
+    const aiResponse = await callClaude(prompt_template, 'claude-sonnet-4-6', job.client_id)
     const { subject, body_html } = parseClaudeResponse(aiResponse)
     const rawHtml = wrapEmailHtml(body_html, ctx.sender_name ?? 'Formateur')
     const trackingToken = await sendEmailWithChannels({

@@ -495,7 +495,7 @@ clientAuthRouter.post('/ai/generate', authenticateClient, aiLimiter, validate(Ai
   ].join('\n')
 
   try {
-    const raw = await callClaudeChat(userMessage, AI_GENERATE_SYSTEM, 'claude-haiku-4-5-20251001')
+    const raw = await callClaudeChat(userMessage, AI_GENERATE_SYSTEM, 'claude-haiku-4-5-20251001', (req as any).clientId)
     const { subject, body_html } = parseClaudeResponse(raw)
     res.json({ subject, body: body_html })
   } catch (err: any) {
@@ -510,7 +510,7 @@ clientAuthRouter.post('/ai/improve', authenticateClient, aiLimiter, validate(AiI
   const userMessage = emailType ? `Type d'email : ${emailType}\n\n${content}` : content
 
   try {
-    const raw = await callClaudeChat(userMessage, AI_IMPROVE_SYSTEM, 'claude-haiku-4-5-20251001')
+    const raw = await callClaudeChat(userMessage, AI_IMPROVE_SYSTEM, 'claude-haiku-4-5-20251001', (req as any).clientId)
     const { subject, body_html } = parseClaudeResponse(raw)
     res.json({ subject, body: body_html })
   } catch (err: any) {

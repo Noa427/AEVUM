@@ -57,7 +57,7 @@ supportRouter.post('/inbound', async (req, res) => {
   let category: SupportCategory = 'autre'
   try {
     const classifyPrompt = buildPromptSupportClassify({ from, subject, body })
-    const raw = await callClaude(classifyPrompt, 'claude-haiku-4-5-20251001')
+    const raw = await callClaude(classifyPrompt, 'claude-haiku-4-5-20251001', client_id)
     const normalized = raw.trim().toLowerCase() as SupportCategory
     category = VALID_CATEGORIES.includes(normalized) ? normalized : 'autre'
   } catch (err: any) {
@@ -92,7 +92,7 @@ supportRouter.post('/inbound', async (req, res) => {
 
   try {
     const prompt = promptFn(base_ctx)
-    const aiResponse = await callClaude(prompt, 'claude-sonnet-4-6')
+    const aiResponse = await callClaude(prompt, 'claude-sonnet-4-6', client_id)
     const { subject: replySubject, body_html } = parseClaudeResponse(aiResponse)
     const html = wrapEmailHtml(body_html, sender_name)
 

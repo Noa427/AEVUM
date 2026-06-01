@@ -48,7 +48,7 @@ tasksRouter.post('/:id/preview', async (req, res) => {
   try {
     let aiResponse: string
     if (isAuto && task.prompt_template) {
-      aiResponse = await callClaude(task.prompt_template, 'claude-sonnet-4-6')
+      aiResponse = await callClaude(task.prompt_template, 'claude-sonnet-4-6', task.client_id)
       await supabase.from('pending_tasks').update({ ai_response: aiResponse }).eq('id', task.id)
     } else {
       const provided = (req.body.ai_response as string) || task.ai_response
