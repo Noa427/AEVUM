@@ -57,10 +57,11 @@ export async function uploadVocalAudio(
 export async function makeVocalCall(to: string, audioUrl: string): Promise<string> {
   try {
     const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+    const safeUrl = audioUrl.replace(/&/g, '&amp;')
     const call = await client.calls.create({
       to,
       from: process.env.TWILIO_FROM_NUMBER!,
-      twiml: `<Response><Play>${audioUrl}</Play><Hangup/></Response>`,
+      twiml: `<Response><Play>${safeUrl}</Play><Hangup/></Response>`,
     })
     return call.sid
   } catch (err: any) {
