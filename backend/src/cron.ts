@@ -134,15 +134,15 @@ async function handleStandardJob(job: any): Promise<void> {
       .eq('config_type', 'vocal_ia_active')
       .single()
 
+    // vocal_ia_active is the sole runtime gate — admin activates it when client purchases addon F13
     let vocalActive = false
     if (vocalCfg?.encrypted_value) {
       try { vocalActive = JSON.parse(decrypt(vocalCfg.encrypted_value))?.active === true } catch {}
     }
 
     if (vocalActive) {
-      const startOfMonth = new Date()
-      startOfMonth.setDate(1)
-      startOfMonth.setHours(0, 0, 0, 0)
+      const now = new Date()
+      const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
 
       const { count: alreadyCalled } = await supabase
         .from('email_tracking')
@@ -150,9 +150,10 @@ async function handleStandardJob(job: any): Promise<void> {
         .eq('client_id', job.client_id)
         .eq('student_email', (ctx.customer_email as string).toLowerCase())
         .eq('channel', 'vocal')
+        .eq('config_type', 'vocal_recovery')
         .gte('sent_at', startOfMonth.toISOString())
 
-      if (!alreadyCalled || alreadyCalled === 0) {
+      if ((alreadyCalled ?? 0) === 0) {
         void sendVocalRecovery(job.client_id, ctx.customer_email as string)
       }
     }
