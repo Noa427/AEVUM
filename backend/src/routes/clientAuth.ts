@@ -1170,6 +1170,22 @@ clientAuthRouter.post('/vocal/send', authenticateClient, aiLimiter, async (req, 
     return res.status(400).json({ error: 'student_id invalide' })
   }
 
+  const { data: vocalCfg } = await supabase
+    .from('client_configs')
+    .select('encrypted_value')
+    .eq('client_id', clientId)
+    .eq('config_type', 'vocal_ia_active')
+    .single()
+
+  let vocalActive = false
+  if (vocalCfg?.encrypted_value) {
+    try { vocalActive = JSON.parse(decrypt(vocalCfg.encrypted_value))?.active === true } catch {}
+  }
+
+  if (!vocalActive) {
+    return res.status(403).json({ error: 'Option vocal non activée pour ce compte' })
+  }
+
   const { data: profile } = await supabase
     .from('student_profiles')
     .select('email, phone')

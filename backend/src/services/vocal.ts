@@ -56,6 +56,10 @@ export async function uploadVocalAudio(
 
 export async function makeVocalCall(to: string, audioUrl: string): Promise<string> {
   try {
+    if (!to.startsWith('+')) {
+      console.warn(`[vocal] numéro non E.164 — appel annulé: ${to}`)
+      return ''
+    }
     const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
     const safeUrl = audioUrl.replace(/&/g, '&amp;')
     const call = await client.calls.create({
@@ -116,16 +120,20 @@ export async function sendVocalRecovery(clientId: string, studentEmail: string):
     const audioUrl = await uploadVocalAudio(buffer, clientId, email)
     const callSid = await makeVocalCall(profile.phone, audioUrl)
 
-    await insertTrackingRow({ clientId, studentEmail: email, configType: 'vocal_recovery', channel: 'vocal' })
+    if (callSid) {
+      await insertTrackingRow({ clientId, studentEmail: email, configType: 'vocal_recovery', channel: 'vocal' })
 
-    await supabase.from('activity_logs').insert({
-      client_id: clientId,
-      action_type: 'vocal_recovery_sent',
-      payload_json: { studentEmail: email, phone: profile.phone, callSid },
-      status: 'sent',
-    })
+      await supabase.from('activity_logs').insert({
+        client_id: clientId,
+        action_type: 'vocal_recovery_sent',
+        payload_json: { studentEmail: email, phone: profile.phone, callSid },
+        status: 'sent',
+      })
 
-    console.log(`[vocal] appel déclenché → ${email} (callSid: ${callSid || 'n/a'})`)
+      console.log(`[vocal] appel déclenché → ${email} (callSid: ${callSid})`)
+    } else {
+      console.warn(`[vocal] appel Twilio non confirmé pour ${email} — tracking non enregistré`)
+    }
   } catch (err: any) {
     console.error(`[vocal] sendVocalRecovery échoué (${studentEmail}):`, err.message)
   }
