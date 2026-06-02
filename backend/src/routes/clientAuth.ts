@@ -11,6 +11,7 @@ import { callClaudeChat } from '../services/claude'
 import { parseClaudeResponse, wrapEmailHtml } from '../services/templates'
 import { sendEmail } from '../services/resend'
 import { validateWhatsApp } from '../services/whatsapp'
+import { sendVocalRecovery } from '../services/vocal'
 import { getEmailTemplate } from '../utils/getEmailTemplate'
 import {
   LoginSchema, PasswordSchema, EmailSchema, ConfigSchema,
@@ -1158,5 +1159,33 @@ clientAuthRouter.delete('/formations/:id', authenticateClient, async (req, res) 
   if (error) return res.status(500).json({ error: error.message })
   if (count === 0) return res.status(404).json({ error: 'Formation introuvable' })
   res.json({ ok: true })
+})
+
+// POST /client/vocal/send
+clientAuthRouter.post('/vocal/send', authenticateClient, portalLimiter, async (req, res) => {
+  const clientId = (req as any).clientId as string
+  const { student_id } = req.body as { student_id?: string }
+
+  if (!student_id || !UUID_RE.test(student_id)) {
+    return res.status(400).json({ error: 'student_id invalide' })
+  }
+
+  const { data: profile } = await supabase
+    .from('student_profiles')
+    .select('email, phone')
+    .eq('id', student_id)
+    .eq('client_id', clientId)
+    .single()
+
+  if (!profile) {
+    return res.status(404).json({ error: 'Élève introuvable' })
+  }
+
+  if (!profile.phone) {
+    return res.status(400).json({ error: 'Numéro de téléphone non renseigné pour cet élève' })
+  }
+
+  await sendVocalRecovery(clientId, profile.email as string)
+  res.json({ success: true, message: 'Appel vocal déclenché' })
 })
 
