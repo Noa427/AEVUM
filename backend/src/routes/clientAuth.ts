@@ -1162,7 +1162,7 @@ clientAuthRouter.delete('/formations/:id', authenticateClient, async (req, res) 
 })
 
 // POST /client/vocal/send
-clientAuthRouter.post('/vocal/send', authenticateClient, portalLimiter, async (req, res) => {
+clientAuthRouter.post('/vocal/send', authenticateClient, aiLimiter, async (req, res) => {
   const clientId = (req as any).clientId as string
   const { student_id } = req.body as { student_id?: string }
 
@@ -1185,7 +1185,11 @@ clientAuthRouter.post('/vocal/send', authenticateClient, portalLimiter, async (r
     return res.status(400).json({ error: 'Numéro de téléphone non renseigné pour cet élève' })
   }
 
-  await sendVocalRecovery(clientId, profile.email as string)
+  if (!profile.email) {
+    return res.status(400).json({ error: 'Email non renseigné pour cet élève' })
+  }
+
+  await sendVocalRecovery(clientId, profile.email)
   res.json({ success: true, message: 'Appel vocal déclenché' })
 })
 
