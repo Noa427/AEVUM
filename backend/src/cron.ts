@@ -7,6 +7,7 @@ import { insertTrackingRow, injectTracking } from './utils/tracking'
 import { getEmailTemplate } from './utils/getEmailTemplate'
 import { sendEmailWithChannels } from './utils/sendMultiChannel'
 import { generateWeeklyVideo, WeeklyStats } from './services/videoreport'
+import { sendVocalRecovery } from './services/vocal'
 
 async function recoverStuckTasks(): Promise<void> {
   const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString()
@@ -124,6 +125,38 @@ async function handleStandardJob(job: any): Promise<void> {
   const prompt_template = getTemplate(task_type, ctx).prompt
   await createTaskForJob(job.id, job.client_id, task_type, ctx, prompt_template, 'pending')
   console.log(`[cron] job ${job.id} (${task_type}) → pending_task créée (atomique)`)
+
+  if (job.job_type === 'failed_payment_j7' && ctx.customer_email) {
+    const { data: vocalCfg } = await supabase
+      .from('client_configs')
+      .select('encrypted_value')
+      .eq('client_id', job.client_id)
+      .eq('config_type', 'vocal_ia_active')
+      .single()
+
+    let vocalActive = false
+    if (vocalCfg?.encrypted_value) {
+      try { vocalActive = JSON.parse(decrypt(vocalCfg.encrypted_value))?.active === true } catch {}
+    }
+
+    if (vocalActive) {
+      const startOfMonth = new Date()
+      startOfMonth.setDate(1)
+      startOfMonth.setHours(0, 0, 0, 0)
+
+      const { count: alreadyCalled } = await supabase
+        .from('email_tracking')
+        .select('*', { count: 'exact', head: true })
+        .eq('client_id', job.client_id)
+        .eq('student_email', (ctx.customer_email as string).toLowerCase())
+        .eq('channel', 'vocal')
+        .gte('sent_at', startOfMonth.toISOString())
+
+      if (!alreadyCalled || alreadyCalled === 0) {
+        void sendVocalRecovery(job.client_id, ctx.customer_email as string)
+      }
+    }
+  }
 }
 
 async function handleUpsellJob(job: any): Promise<void> {
