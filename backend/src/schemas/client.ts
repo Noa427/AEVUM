@@ -27,6 +27,7 @@ export const ALLOWED_CONFIG_TYPES = [
   'addon_f11',
   'addon_f13',
   'addon_f18',
+  'vocal_ia_active',
 ] as const
 
 export const VALID_TRIGGER_TYPES = ['delay_after_purchase', 'specific_date', 'payment_failed', 'manual'] as const
