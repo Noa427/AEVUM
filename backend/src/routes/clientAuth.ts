@@ -187,7 +187,7 @@ clientAuthRouter.get('/me', authenticateClient, async (req, res) => {
 
   const { data, error } = await supabase
     .from('clients')
-    .select('client_email, must_change_password, created_at, paused_until, whatsapp_active')
+    .select('client_email, must_change_password, created_at, paused_until, whatsapp_active, plan')
     .eq('id', clientId)
     .single()
 
@@ -199,6 +199,7 @@ clientAuthRouter.get('/me', authenticateClient, async (req, res) => {
     createdAt: data.created_at,
     pausedUntil: data.paused_until ?? null,
     whatsappConnected: data.whatsapp_active ?? false,
+    plan: data.plan ?? 'standard',
   })
 })
 
