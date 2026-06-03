@@ -44,6 +44,7 @@ import {
   runChurnDetection,
   runStudentCoaching,
   sendVideoReport,
+  sendWeeklyReport,
 } from './cron'
 
 const app = express()
@@ -71,11 +72,13 @@ app.use((req, _res, next) => {
 
 app.get('/health', (_, res) => res.json({ ok: true, timestamp: new Date().toISOString() }))
 
+// Webhooks Stripe : monté avant adminCors pour ne pas être soumis à la restriction d'origine
+app.use('/api/webhooks', webhookLimiter, express.raw({ type: 'application/json' }), webhooksRouter)
+
 app.use('/api', adminCors, apiLimiter)
 app.use('/api/clients', clientsRouter)
 app.use('/api/settings', settingsRouter)
 app.use('/api/dashboard', dashboardRouter)
-app.use('/api/webhooks', webhookLimiter, express.raw({ type: 'application/json' }), webhooksRouter)
 app.use('/api/tasks', tasksRouter)
 app.use('/api/history', historyRouter)
 app.use('/api/simulate', simulateLimiter, simulateRouter)
@@ -95,6 +98,7 @@ app.listen(PORT, () => {
     runChurnDetection()
     runStudentCoaching()
     sendVideoReport()
+    sendWeeklyReport()
     setInterval(runScheduledJobs,     60 * 60 * 1000)
     setInterval(runCustomAutomations, 60 * 60 * 1000)
     setInterval(runTestimonialEmails, 60 * 60 * 1000)
@@ -102,5 +106,6 @@ app.listen(PORT, () => {
     setInterval(runChurnDetection,    60 * 60 * 1000)
     setInterval(runStudentCoaching,   60 * 60 * 1000)
     setInterval(sendVideoReport,      60 * 60 * 1000)
+    setInterval(sendWeeklyReport,     60 * 60 * 1000)
   }
 })
