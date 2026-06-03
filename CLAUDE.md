@@ -191,18 +191,19 @@ Vitrine (.env) :
 | 017 | Table student_profiles (card_exp, phone, last_lms_activity) | Appliquée |
 | 018 | +whatsapp_phone_number_id, +whatsapp_access_token, +whatsapp_active sur clients | Appliquée |
 | 019 | +channel sur email_tracking | Appliquée |
-| 020 | +token_version SMALLINT sur clients (révocation JWT) | À appliquer |
+| 020 | +token_version SMALLINT sur clients (révocation JWT) | Appliquée |
 | 021 | +plan (standard/premium) + payment_status (active/unpaid) sur clients | Appliquée |
 | 022 | Table ai_usage_logs (tokens + coût USD par appel IA, RLS activé) | Appliquée |
+| 023 | +id UUID sur student_profiles (PK secondaire unique) | À appliquer |
 
 ## MODÈLE D'ABONNEMENT
 
 | Plan | Prix | Features |
 |---|---|---|
 | Standard | 690€/m | Toutes features de base (F1–F13 inclus dans le plan) |
-| Premium | 1200€/m | Standard + F14 (pré-dunning) + F15 (churn) + F16 (WhatsApp) + F17 (rapport vidéo) + F19 (coaching) + F20 (SMS) |
-| Option F11 | +150€/m | Récupération abandons checkout |
-| Option F13 | +300€/m | Récupération vocale IA |
+| Premium | 1 290€/m | Standard + F14 (pré-dunning) + F15 (churn) + F16 (WhatsApp) + F17 (rapport vidéo) + F19 (coaching) + F20 (SMS) |
+| Option F11 | +200€/m | Récupération abandons checkout |
+| Option F13 | +350€/m + coûts d'appels | Récupération vocale IA |
 | Option F18 | +149€/dossier | Module Notaire |
 
 Stockage : `clients.plan` (standard/premium) + `clients.payment_status` (active/unpaid) + `client_configs` pour addon_f11/f13/f18.
