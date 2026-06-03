@@ -127,7 +127,7 @@ async function generateSlides(stats: WeeklyStats, tmpDir: string): Promise<strin
 
     ctx.font = '24px sans-serif'
     ctx.fillStyle = '#888888'
-    ctx.fillText('AutomatePro', W / 2, H - 40)
+    ctx.fillText('AEVUM', W / 2, H - 40)
 
     const slidePath = path.join(tmpDir, `slide_${i}.png`)
     fs.writeFileSync(slidePath, canvas.toBuffer('image/png'))

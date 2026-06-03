@@ -116,6 +116,21 @@ export async function sendVocalRecovery(clientId: string, studentEmail: string):
       `Si vous avez déjà effectué le paiement, ignorez ce message. ` +
       `Merci et bonne journée.`
 
+    // Idempotence : ne pas rappeler si un appel vocal a déjà été déclenché dans les 30 derniers jours
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    const { data: existingCall } = await supabase
+      .from('email_tracking')
+      .select('id')
+      .eq('client_id', clientId)
+      .eq('channel', 'vocal')
+      .eq('student_email', email)
+      .gte('sent_at', thirtyDaysAgo)
+      .maybeSingle()
+    if (existingCall) {
+      console.log(`[vocal] appel déjà effectué dans les 30j pour ${email} — ignoré`)
+      return
+    }
+
     const buffer = await generateVocalMessage(text)
     const audioUrl = await uploadVocalAudio(buffer, clientId, email)
     const callSid = await makeVocalCall(profile.phone, audioUrl)

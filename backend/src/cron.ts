@@ -122,6 +122,21 @@ async function handleStandardJob(job: any): Promise<void> {
     }
   }
 
+  // Blacklist check
+  if (ctx.customer_email) {
+    const { data: bl } = await supabase
+      .from('client_blacklist')
+      .select('email')
+      .eq('client_id', job.client_id)
+      .eq('email', (ctx.customer_email as string).toLowerCase())
+      .maybeSingle()
+    if (bl) {
+      await supabase.from('scheduled_jobs').update({ status: 'done' }).eq('id', job.id)
+      console.log(`[cron] job ${job.id} (${task_type}) ignoré — email blacklisté`)
+      return
+    }
+  }
+
   const prompt_template = getTemplate(task_type, ctx).prompt
   await createTaskForJob(job.id, job.client_id, task_type, ctx, prompt_template, 'pending')
   console.log(`[cron] job ${job.id} (${task_type}) → pending_task créée (atomique)`)
@@ -199,6 +214,21 @@ async function handleUpsellJob(job: any): Promise<void> {
     return
   }
 
+  // Blacklist check
+  if (ctx.customer_email) {
+    const { data: bl } = await supabase
+      .from('client_blacklist')
+      .select('email')
+      .eq('client_id', job.client_id)
+      .eq('email', (ctx.customer_email as string).toLowerCase())
+      .maybeSingle()
+    if (bl) {
+      await supabase.from('scheduled_jobs').update({ status: 'done' }).eq('id', job.id)
+      console.log(`[cron] job ${job.id} (upsell) ignoré — email blacklisté`)
+      return
+    }
+  }
+
   // Mode auto : RPC atomique insert processing + job done, puis email
   const taskId = await createTaskForJob(job.id, job.client_id, 'upsell', ctx, prompt_template, 'processing')
 
@@ -250,12 +280,13 @@ async function handleCheckoutAbandonJob(job: any): Promise<void> {
   if (!customerEmail) { await markDone(); return }
 
   // Blacklist check
-  const { count: isBlacklisted } = await supabase
+  const { data: blAbandon } = await supabase
     .from('client_blacklist')
-    .select('*', { count: 'exact', head: true })
+    .select('email')
     .eq('client_id', job.client_id)
     .eq('email', customerEmail.toLowerCase())
-  if (isBlacklisted && isBlacklisted > 0) { await markDone(); return }
+    .maybeSingle()
+  if (blAbandon) { await markDone(); return }
 
   // Template must exist in client_configs (no default fallback — spec: "absent → ne pas envoyer")
   const { data: configRow } = await supabase
@@ -398,6 +429,20 @@ export async function runCustomAutomations(): Promise<void> {
 
     if (!shouldFire || firedIds.has(automation.id)) continue
 
+    if (!client.email) continue
+
+    // Blacklist check
+    const { data: blAuto } = await supabase
+      .from('client_blacklist')
+      .select('email')
+      .eq('client_id', automation.client_id)
+      .eq('email', client.email.toLowerCase())
+      .maybeSingle()
+    if (blAuto) {
+      console.log(`[cron:custom] "${automation.name}" ignoré — email blacklisté`)
+      continue
+    }
+
     try {
       const senderName = senderMap.get(automation.client_id) ?? client.name
       const rawHtml = wrapEmailHtml(automation.body.replace(/\n/g, '<br>'), senderName)
@@ -490,14 +535,14 @@ export async function sendWeeklyReport(): Promise<void> {
       .join('\n')
 
     const subject = `Rapport hebdomadaire — ${client.name}`
-    const text = `Bonjour,\n\nVoici les emails envoyés cette semaine pour ${client.name} :\n\n${lines}\n\nTotal : ${logs.length} email(s)\n\nCordialement,\nAutomatePro`
+    const text = `Bonjour,\n\nVoici les emails envoyés cette semaine pour ${client.name} :\n\n${lines}\n\nTotal : ${logs.length} email(s)\n\nCordialement,\nAEVUM`
 
     try {
       await sendEmail({
         to: client.email,
         subject,
         html: `<pre style="font-family:sans-serif;white-space:pre-wrap">${text}</pre>`,
-        sender_name: 'AutomatePro',
+        sender_name: 'AEVUM',
       })
       console.log(`[cron] rapport hebdo → ${client.email}`)
     } catch (err: any) {
@@ -565,6 +610,18 @@ export async function runTestimonialEmails(): Promise<void> {
       ]
 
       for (const studentEmail of emailsInWindow) {
+        // Blacklist check
+        const { data: blTest } = await supabase
+          .from('client_blacklist')
+          .select('email')
+          .eq('client_id', clientId)
+          .eq('email', studentEmail.toLowerCase())
+          .maybeSingle()
+        if (blTest) {
+          console.log(`[cron:testimonial] ${milestone}: skipped ${studentEmail} — blacklisted`)
+          continue
+        }
+
         // Skip if already sent for this milestone
         const { count: alreadySent } = await supabase
           .from('activity_logs')
@@ -655,6 +712,18 @@ export async function runPredunning(): Promise<void> {
     let config: Record<string, any>
     try { config = JSON.parse(decrypt(configRow.encrypted_value)) } catch { continue }
     if (config.active === false) continue
+
+    // Blacklist check
+    const { data: blPred } = await supabase
+      .from('client_blacklist')
+      .select('email')
+      .eq('client_id', clientId)
+      .eq('email', email.toLowerCase())
+      .maybeSingle()
+    if (blPred) {
+      console.log(`[cron:predunning] skipped ${email} — blacklisted`)
+      continue
+    }
 
     const since30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()
     const { count: alreadySent } = await supabase
@@ -781,6 +850,18 @@ export async function runChurnDetection(): Promise<void> {
       : 'Formateur'
 
     for (const { email, ctx } of candidates) {
+      // Blacklist check
+      const { data: blChurn } = await supabase
+        .from('client_blacklist')
+        .select('email')
+        .eq('client_id', clientId)
+        .eq('email', email.toLowerCase())
+        .maybeSingle()
+      if (blChurn) {
+        console.log(`[cron:churn] skipped ${email} — blacklisted`)
+        continue
+      }
+
       const { data: profileRow } = await supabase
         .from('student_profiles')
         .select('last_lms_activity')
@@ -913,6 +994,18 @@ export async function runStudentCoaching(): Promise<void> {
       : 'Formateur'
 
     for (const { email, ctx } of candidates) {
+      // Blacklist check
+      const { data: blCoach } = await supabase
+        .from('client_blacklist')
+        .select('email')
+        .eq('client_id', clientId)
+        .eq('email', email.toLowerCase())
+        .maybeSingle()
+      if (blCoach) {
+        console.log(`[cron:coaching] skipped ${email} — blacklisted`)
+        continue
+      }
+
       const { data: profileRow } = await supabase
         .from('student_profiles')
         .select('last_lms_activity')
@@ -1045,8 +1138,8 @@ export async function sendVideoReport(): Promise<void> {
       await sendEmail({
         to: client.email,
         subject: `Votre rapport vidéo — ${weekLabel}`,
-        html: `<p>Bonjour ${client.name},</p><p>Votre rapport vidéo de la semaine est prêt :</p><p><a href="${videoUrl}">Voir le rapport</a></p><p>Ce lien expire dans 7 jours.</p><p>AutomatePro</p>`,
-        sender_name: 'AutomatePro',
+        html: `<p>Bonjour ${client.name},</p><p>Votre rapport vidéo de la semaine est prêt :</p><p><a href="${videoUrl}">Voir le rapport</a></p><p>Ce lien expire dans 7 jours.</p><p>AEVUM</p>`,
+        sender_name: 'AEVUM',
       })
 
       await supabase.from('activity_logs').insert({
