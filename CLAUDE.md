@@ -197,7 +197,7 @@ Vitrine (.env) :
 | 020 | +token_version SMALLINT sur clients (révocation JWT) | Appliquée |
 | 021 | +plan (standard/premium) + payment_status (active/unpaid) sur clients | Appliquée |
 | 022 | Table ai_usage_logs (tokens + coût USD par appel IA, RLS activé) | Appliquée |
-| 023 | +id UUID sur student_profiles (PK secondaire unique) | À appliquer |
+| 023 | +id UUID sur student_profiles (PK secondaire unique) | Appliquée |
 
 ## MODÈLE D'ABONNEMENT
 
@@ -213,7 +213,6 @@ Stockage : `clients.plan` (standard/premium) + `clients.payment_status` (active/
 
 ## PROCHAINE FEATURE À CODER
 
-- Migration 023 à appliquer (+id UUID sur student_profiles) — SQL dans le SQL Editor Supabase
 - Limites d'usage IA par client (quota mensuel) — avant lancement AEVUM
 - Clé IA admin séparée (provider configurable) pour rapports AEVUM
 - Intégration Stripe côté admin pour paiement automatique clients
