@@ -109,8 +109,10 @@ clientsRouter.put('/:id', async (req, res) => {
   const userId = (req as any).userId
   const { name, email, stripe_webhook_secret, sender_name, auto_mode, plan, payment_status } = req.body
 
-  const update: Record<string, any> = { name, email }
-  if (auto_mode !== undefined) update.auto_mode = auto_mode
+  const update: Record<string, any> = {}
+  if (typeof name !== 'undefined') update.name = name
+  if (typeof email !== 'undefined') update.email = email
+  if (typeof auto_mode !== 'undefined') update.auto_mode = auto_mode
   if (plan !== undefined) {
     if (!['standard', 'premium'].includes(plan)) return res.status(400).json({ error: 'Plan invalide' })
     update.plan = plan
@@ -120,14 +122,31 @@ clientsRouter.put('/:id', async (req, res) => {
     update.payment_status = payment_status
   }
 
-  const { data: client, error } = await supabase
-    .from('clients')
-    .update(update)
-    .eq('id', req.params.id)
-    .eq('user_id', userId)
-    .select()
-    .single()
-  if (error || !client) return res.status(404).json({ error: 'Client introuvable' })
+  if (Object.keys(update).length === 0 && !stripe_webhook_secret && !sender_name) {
+    return res.status(400).json({ error: 'Aucun champ à mettre à jour' })
+  }
+
+  let client: any
+  if (Object.keys(update).length > 0) {
+    const { data, error } = await supabase
+      .from('clients')
+      .update(update)
+      .eq('id', req.params.id)
+      .eq('user_id', userId)
+      .select()
+      .single()
+    if (error || !data) return res.status(404).json({ error: 'Client introuvable' })
+    client = data
+  } else {
+    const { data, error } = await supabase
+      .from('clients')
+      .select()
+      .eq('id', req.params.id)
+      .eq('user_id', userId)
+      .single()
+    if (error || !data) return res.status(404).json({ error: 'Client introuvable' })
+    client = data
+  }
 
   if (stripe_webhook_secret) {
     await supabase.from('client_configs').upsert(
