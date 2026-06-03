@@ -377,8 +377,21 @@ async function handlePaymentRecovered(opts: { event: any; clientId: string }) {
   const inv = event.data.object as any
   const customerEmail = inv.customer_email ?? inv.metadata?.customer_email ?? ''
   const amount = (inv.amount_paid ?? inv.amount_due ?? 0) / 100
+  const invoiceId: string | undefined = typeof inv.id === 'string' ? inv.id : undefined
 
   if (!customerEmail) return
+
+  // Idempotence — éviter un double insert si Stripe rejoue invoice.payment_succeeded
+  if (invoiceId) {
+    const { data: existing } = await supabase
+      .from('activity_logs')
+      .select('id')
+      .eq('client_id', clientId)
+      .eq('action_type', 'payment_recovered')
+      .contains('payload_json', { invoice_id: invoiceId })
+      .maybeSingle()
+    if (existing) return
+  }
 
   // Only log as recovery if there was a prior dunning attempt for this customer
   const { count } = await supabase
@@ -394,7 +407,7 @@ async function handlePaymentRecovered(opts: { event: any; clientId: string }) {
   await supabase.from('activity_logs').insert({
     client_id: clientId,
     action_type: 'payment_recovered',
-    payload_json: { customer_email: customerEmail, amount },
+    payload_json: { customer_email: customerEmail, amount, invoice_id: invoiceId },
     status: 'ok',
   })
   console.log(`[webhook] paiement récupéré pour ${customerEmail} — ${amount}€`)
