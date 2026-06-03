@@ -13,6 +13,7 @@ import { sendEmail } from '../services/resend'
 import { validateWhatsApp } from '../services/whatsapp'
 import { sendVocalRecovery } from '../services/vocal'
 import { getEmailTemplate } from '../utils/getEmailTemplate'
+import { insertTrackingRow } from '../utils/tracking'
 import {
   LoginSchema, PasswordSchema, EmailSchema, ConfigSchema,
   AutomationSchema, AutomationUpdateSchema, AiGenerateSchema, AiImproveSchema,
@@ -1065,6 +1066,13 @@ clientAuthRouter.post('/send-manual', authenticateClient, validate(ManualSendSch
       html: htmlBody,
       sender_name: senderName,
     })
+
+    insertTrackingRow({
+      clientId,
+      studentEmail: student_email.toLowerCase(),
+      configType: config_type,
+      channel: 'email',
+    }).catch((e: Error) => console.warn('[send-manual] tracking insert failed:', e.message))
 
     const { error: logError } = await supabase.from('activity_logs').insert({
       client_id: clientId,
