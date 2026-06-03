@@ -42,10 +42,11 @@
 
 - Phase 1 — Foundation : TERMINÉE
 - Phase 2 — Logique métier complète : TERMINÉE
-- Phase 3 — Auth client + portail Vitrine : backend TERMINÉ, pages Vitrine EN COURS
+- Phase 3 — Auth client + portail Vitrine : TERMINÉE (toutes pages portail présentes)
 - Audit 2026-05-28 : URL webhook corrigée, code mort supprimé (portal.ts, supabase-server.ts, stubs history/tasks)
 - Hardening sécurité 2026-05-28 : 10 corrections (E1-E3, M4-M8, F9-F15), 0 vulnérabilité npm
 - Redesign AEVUM APP 2026-06-01 : renommage, plans Standard/Premium, addons F11/F13/F18 par client, coûts IA auto (tokens), dashboard enrichi MRR/coûts/profit, page clients refaite avec filtres/tri/toggles inline
+- Audit complet + 19 corrections 2026-06-03 : sécurité (webhooks hors adminCors, blacklist crons, idempotence), bugs (POST→PUT settings, PUT clients guard, tracking send-manual), UX portail (pagination élèves, panel upsell, labels history, Premium gate rapport vidéo), Vitrine (Se connecter navbar, CGU tarifs, footer légal)
 
 ## STRUCTURE DES FICHIERS
 
@@ -149,7 +150,7 @@ Vitrine (.env) :
 - POST      /client/login                  → argon2id → JWT 7j (loginLimiter 5/15min)
 - POST      /client/forgot-password        → envoi email reset (forgotPasswordLimiter 3/15min)
 - POST      /client/reset-password         → nouveau mdp via token JWT 1h
-- GET       /client/me                     → email + mustChangePassword + pausedUntil
+- GET       /client/me                     → email + mustChangePassword + pausedUntil + plan + whatsapp_connected
 - PUT       /client/settings/password      → changer mdp
 - PUT       /client/settings/email         → changer email (vérifie currentPassword)
 - GET       /client/automations            → piliers actifs + senderName
@@ -169,6 +170,8 @@ Vitrine (.env) :
 - POST      /client/send-manual            → envoi manuel à un élève (template ou custom)
 - GET/POST  /client/formations             → liste / créer formation
 - PUT/DELETE /client/formations/:id        → modifier / supprimer formation
+- POST      /client/vocal/send            → déclenchement manuel appel vocal IA (addon_f13)
+- POST/DELETE /client/settings/whatsapp   → connecter / déconnecter WhatsApp Business
 
 ### Système
 - GET       /health                        → { ok: true, timestamp }
@@ -210,8 +213,7 @@ Stockage : `clients.plan` (standard/premium) + `clients.payment_status` (active/
 
 ## PROCHAINE FEATURE À CODER
 
-- Pages Vitrine manquantes : /client/history, /client/customize, /client/settings
-- Migration 020 à appliquer (+token_version sur clients)
+- Migration 023 à appliquer (+id UUID sur student_profiles) — SQL dans le SQL Editor Supabase
 - Limites d'usage IA par client (quota mensuel) — avant lancement AEVUM
 - Clé IA admin séparée (provider configurable) pour rapports AEVUM
 - Intégration Stripe côté admin pour paiement automatique clients
@@ -219,7 +221,11 @@ Stockage : `clients.plan` (standard/premium) + `clients.payment_status` (active/
 - Multi-tenant admin : plusieurs admins, isolation par user_id
 - Notifications push/Slack sur nouveau webhook reçu
 - Interface de configuration des délais J3/J7 par client
+- Gate vocal_ia_active sur addon_f13 dans PUT /client/configs (côté backend ou Vitrine)
 
 ## À FAIRE (dette technique signalée)
 
-*(aucune dette technique connue)*
+- `sendVideoReport` et `sendWeeklyReport` ont la même fenêtre lundi 08h UTC — deux reports lourds en simultané
+- `PUT /api/clients/:id` : fields `sender_name`/`stripe_webhook_secret` testés en falsy (`!val`) — un empty string bypass le 400
+- `client_configs` upsert ignore `formation_id` : deux configs du même type pour des formations différentes ne coexistent pas
+- `/client/automations` retourne `recouvrement: true` si stripe_webhook_secret présent — indicateur peu fiable
