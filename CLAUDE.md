@@ -47,6 +47,7 @@
 - Hardening sécurité 2026-05-28 : 10 corrections (E1-E3, M4-M8, F9-F15), 0 vulnérabilité npm
 - Redesign AEVUM APP 2026-06-01 : renommage, plans Standard/Premium, addons F11/F13/F18 par client, coûts IA auto (tokens), dashboard enrichi MRR/coûts/profit, page clients refaite avec filtres/tri/toggles inline
 - Audit complet + 19 corrections 2026-06-03 : sécurité (webhooks hors adminCors, blacklist crons, idempotence), bugs (POST→PUT settings, PUT clients guard, tracking send-manual), UX portail (pagination élèves, panel upsell, labels history, Premium gate rapport vidéo), Vitrine (Se connecter navbar, CGU tarifs, footer légal)
+- Audit graphify 2026-06-07 : dérive de prix détectée — le changement de grille tarifaire du 2026-06-03 (commit badc2ba, Premium 1290/F11 +200/F13 +350) n'avait pas été répercuté dans le code (dashboard.ts + clients/page.tsx restaient sur 1200/150/300, committés 2 jours avant). Corrigé sur `fix/prix-dashboard`. README.md racine également mis à jour (branding AEVUM, Next.js 14, RESEND_FROM_EMAIL, route webhook réelle) sur `chore/readme-update`
 
 ## STRUCTURE DES FICHIERS
 
@@ -71,6 +72,10 @@ backend/src/
     resend.ts               — sendEmail()
     claude.ts               — callClaude(prompt, model?, clientId?) + callClaudeChat() — log tokens dans ai_usage_logs
     templates.ts            — prompts IA + parseClaudeResponse + wrapEmailHtml
+    whatsapp.ts             — sendWhatsApp() + validateWhatsApp() (F16)
+    sms.ts                  — sendSms() via Twilio (F20)
+    vocal.ts                — generateVocalMessage/uploadVocalAudio/makeVocalCall/sendVocalRecovery — ElevenLabs+Twilio (F13, addon_f13)
+    videoreport.ts          — generateWeeklyVideo (buildScript/generateSlides/generateAudio/assembleMp4) (F17)
   middleware/
     auth.ts                 — requireAuth (Supabase JWT admin)
     authenticateClient.ts   — JWT client → req.clientId + req.clientEmail
@@ -83,8 +88,9 @@ backend/src/
     generateClientCredentials.ts — génère mdp, hash argon2id, envoie email Resend
     getEmailTemplate.ts     — cherche config DB puis fallback defaults
     tracking.ts             — insertTrackingRow + injectTracking (pixel + lien)
+    sendMultiChannel.ts     — sendEmailWithChannels() — dispatch email + WhatsApp/SMS selon canaux actifs du client
   schemas/
-    client.ts               — schémas Zod + ALLOWED_CONFIG_TYPES (22 types, +addon_f11/f13/f18)
+    client.ts               — schémas Zod + ALLOWED_CONFIG_TYPES (27 types : 23 piliers/templates + addon_f11/f13/f18 + vocal_ia_active)
 
 frontend/
   app/
