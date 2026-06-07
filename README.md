@@ -1,11 +1,11 @@
-# AutomatePro — AEVUM
+# AEVUM
 
 Outil SaaS pour formateurs en ligne : automatise les emails de relance impayés et d'onboarding via Stripe webhooks + Claude AI + Resend.
 
 ## Stack
 
 - **Backend** : Node.js / Express / TypeScript → déployé sur Render
-- **Frontend** : Next.js 16 / TypeScript / Tailwind / shadcn → déployé sur Vercel
+- **Frontend** : Next.js 14 / TypeScript / Tailwind / shadcn → déployé sur Vercel
 - **Base de données** : Supabase (PostgreSQL)
 - **Email** : Resend
 - **IA** : Anthropic Claude (optionnel — mode manuel disponible sans clé)
@@ -128,7 +128,7 @@ Backend : http://localhost:3001
 | `SUPABASE_ANON_KEY` | ✓ | Clé anon Supabase |
 | `SUPABASE_SERVICE_ROLE_KEY` | ✓ | Clé service role Supabase (accès admin) |
 | `RESEND_API_KEY` | ✓ | Clé API Resend |
-| `RESEND_FROM_DOMAIN` | ✓ | Adresse email expéditeur (ex: `contact@mondomaine.fr`) |
+| `RESEND_FROM_EMAIL` | ✓ | Adresse email expéditeur complète (ex: `noreply@tondomaine.com`) |
 | `ENCRYPTION_KEY` | ✓ | Clé AES-256 pour chiffrement configs clients (32 chars hex) |
 | `ADMIN_SECRET` | ✓ | Secret pour les routes admin (requireAuth) |
 | `JWT_SECRET` | ✓ | Secret JWT portail client (partager avec la Vitrine) |
@@ -152,7 +152,7 @@ Backend : http://localhost:3001
 |----------|-------------|
 | `NEXT_PUBLIC_SUPABASE_URL` | URL du projet Supabase |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Clé anon Supabase |
-| `NEXT_PUBLIC_API_URL` | URL du backend (ex: `https://automatepro-backend.onrender.com`) |
+| `NEXT_PUBLIC_API_URL` | URL du backend (ex: `https://aevum-backend.onrender.com`) |
 
 ## Commandes backend
 
@@ -189,7 +189,7 @@ npm run seed:test    # insérer un client de test + envoyer ses credentials par 
 Pour chaque client, récupérer l'URL webhook dans l'interface (/clients → Webhook) :
 
 ```
-https://<backend-url>/api/webhooks/stripe/<client_id>
+https://<backend-url>/api/webhooks/<client_id>
 ```
 
 Événements à activer dans Stripe :
@@ -207,7 +207,7 @@ supabase db push
 ## Flux de traitement
 
 ```
-Stripe event → POST /api/webhooks/stripe/:clientId
+Stripe event → POST /api/webhooks/:clientId
   → vérification signature (webhook_secret du client)
   → mode manuel : INSERT pending_task (status=pending)
   → mode auto : Claude API → Resend → activity_log
