@@ -48,6 +48,7 @@
 - Redesign AEVUM APP 2026-06-01 : renommage, plans Standard/Premium, addons F11/F13/F18 par client, coûts IA auto (tokens), dashboard enrichi MRR/coûts/profit, page clients refaite avec filtres/tri/toggles inline
 - Audit complet + 19 corrections 2026-06-03 : sécurité (webhooks hors adminCors, blacklist crons, idempotence), bugs (POST→PUT settings, PUT clients guard, tracking send-manual), UX portail (pagination élèves, panel upsell, labels history, Premium gate rapport vidéo), Vitrine (Se connecter navbar, CGU tarifs, footer légal)
 - Audit graphify 2026-06-07 : dérive de prix détectée — le changement de grille tarifaire du 2026-06-03 (commit badc2ba, Premium 1290/F11 +200/F13 +350) n'avait pas été répercuté dans le code (dashboard.ts + clients/page.tsx restaient sur 1200/150/300, committés 2 jours avant). Corrigé sur `fix/prix-dashboard`. README.md racine également mis à jour (branding AEVUM, Next.js 14, RESEND_FROM_EMAIL, route webhook réelle) sur `chore/readme-update`
+- Plan gating backend 2026-06-08 : middleware planGate.ts (checkGate/planGate → 403 PLAN_REQUIRED|OPTION_REQUIRED), options option_checkout/option_vocal/option_notaire exposées comme alias de addon_f11/f13/f18 (lecture/écriture via client_configs, pas de nouvelles colonnes), gates posés sur POST /client/vocal/send (option_vocal) et PUT /client/configs pour rapport_video_active (plan premium), routes admin POST /api/clients + PUT /api/clients/:id/plan (gestion plan/options + log activity_logs 'plan_updated'). Sur `feat/plan-gating-backend`
 
 ## STRUCTURE DES FICHIERS
 
@@ -84,6 +85,7 @@ backend/src/
     error-handler.ts        — handler global Express
     validate.ts             — middleware Zod
     admin-access-log.ts     — log chaque requête admin dans activity_logs
+    planGate.ts             — gating plan/options client : checkGate()/planGate() → 403 PLAN_REQUIRED|OPTION_REQUIRED ; OPTION_ADDON_MAP (option_checkout/vocal/notaire ↔ addon_f11/f13/f18)
   utils/
     generateClientCredentials.ts — génère mdp, hash argon2id, envoie email Resend
     getEmailTemplate.ts     — cherche config DB puis fallback defaults
@@ -133,8 +135,9 @@ Vitrine (.env) :
 ## ROUTES BACKEND
 
 ### Admin (requireAuth + adminCors + apiLimiter)
-- GET/POST  /api/clients                   → liste / créer client + credentials
+- GET/POST  /api/clients                   → liste / créer client + credentials (POST accepte plan + option_checkout/vocal/notaire)
 - GET/PUT/DELETE /api/clients/:id          → détail / modifier / supprimer
+- PUT       /api/clients/:id/plan          → maj plan + options (addon_f11/f13/f18), log activity_logs 'plan_updated'
 - GET/PUT   /api/clients/:id/configs       → configs piliers (support, upsell…)
 - GET       /api/tasks                     → tâches paginées (?status&client_id&page&limit)
 - POST      /api/tasks/:id/preview         → génère ou utilise ai_response pré-peuplé
@@ -156,7 +159,7 @@ Vitrine (.env) :
 - POST      /client/login                  → argon2id → JWT 7j (loginLimiter 5/15min)
 - POST      /client/forgot-password        → envoi email reset (forgotPasswordLimiter 3/15min)
 - POST      /client/reset-password         → nouveau mdp via token JWT 1h
-- GET       /client/me                     → email + mustChangePassword + pausedUntil + plan + whatsapp_connected
+- GET       /client/me                     → email + mustChangePassword + pausedUntil + plan + option_checkout/vocal/notaire + whatsapp_connected
 - PUT       /client/settings/password      → changer mdp
 - PUT       /client/settings/email         → changer email (vérifie currentPassword)
 - GET       /client/automations            → piliers actifs + senderName
@@ -226,7 +229,8 @@ Stockage : `clients.plan` (standard/premium) + `clients.payment_status` (active/
 - Multi-tenant admin : plusieurs admins, isolation par user_id
 - Notifications push/Slack sur nouveau webhook reçu
 - Interface de configuration des délais J3/J7 par client
-- Gate vocal_ia_active sur addon_f13 dans PUT /client/configs (côté backend ou Vitrine)
+- Gate vocal_ia_active sur addon_f13 dans PUT /client/configs (côté backend ou Vitrine) — distinct du planGate déjà posé sur POST /client/vocal/send (celui-ci bloque l'envoi, pas l'activation de la config)
+- Front : exploiter option_checkout/option_vocal/option_notaire renvoyés par /client/me (UI conditionnelle portail) + UI admin pour PUT /api/clients/:id/plan
 
 ## À FAIRE (dette technique signalée)
 
