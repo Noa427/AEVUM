@@ -15,6 +15,7 @@ import { validateWhatsApp } from '../services/whatsapp'
 import { sendVocalRecovery } from '../services/vocal'
 import { getEmailTemplate } from '../utils/getEmailTemplate'
 import { insertTrackingRow } from '../utils/tracking'
+import { maskEmail } from '../utils/maskEmail'
 import {
   LoginSchema, PasswordSchema, EmailSchema, ConfigSchema,
   AutomationSchema, AutomationUpdateSchema, AiGenerateSchema, AiImproveSchema,
@@ -79,14 +80,14 @@ clientAuthRouter.post('/login', loginLimiter, validate(LoginSchema), async (req,
 
   if (!client || !client.password_hash) {
     await randomDelay()
-    console.warn(`[auth] login échoué — email introuvable: ${email.toLowerCase()}`)
+    console.warn(`[auth] login échoué — email introuvable: ${maskEmail(email.toLowerCase())}`)
     return res.status(401).json({ error: 'Identifiants incorrects' })
   }
 
   const valid = await argon2.verify(client.password_hash, password)
   if (!valid) {
     await randomDelay()
-    console.warn(`[auth] login échoué — mauvais mot de passe: ${email.toLowerCase()}`)
+    console.warn(`[auth] login échoué — mauvais mot de passe: ${maskEmail(email.toLowerCase())}`)
     return res.status(401).json({ error: 'Identifiants incorrects' })
   }
 
@@ -125,6 +126,9 @@ clientAuthRouter.post('/forgot-password', forgotPasswordLimiter, validate(Forgot
     { expiresIn: '1h' }
   )
 
+  // Nouvelle demande → on réarme le verrou used_at pour autoriser ce nouveau token
+  await supabase.from('clients').update({ password_reset_used_at: null }).eq('id', client.id)
+
   const resetUrl = `${process.env.VITRINE_URL}/client/reset-password?token=${token}`
 
   await sendEmail({
@@ -158,7 +162,7 @@ clientAuthRouter.post('/reset-password', forgotPasswordLimiter, validate(ResetPa
 
   const { data: client } = await supabase
     .from('clients')
-    .select('id, password_hash, token_version')
+    .select('id, password_hash, token_version, password_reset_used_at')
     .eq('id', payload.clientId)
     .single()
 
@@ -171,11 +175,20 @@ clientAuthRouter.post('/reset-password', forgotPasswordLimiter, validate(ResetPa
     return res.status(400).json({ error: 'Lien invalide ou expiré' })
   }
 
+  if (client.password_reset_used_at) {
+    return res.status(400).json({ error: 'TOKEN_ALREADY_USED' })
+  }
+
   const newHash = await argon2.hash(newPassword, ARGON2_OPTIONS)
 
   const { error: updateError } = await supabase
     .from('clients')
-    .update({ password_hash: newHash, must_change_password: false, token_version: (client.token_version ?? 0) + 1 })
+    .update({
+      password_hash: newHash,
+      must_change_password: false,
+      token_version: (client.token_version ?? 0) + 1,
+      password_reset_used_at: new Date().toISOString(),
+    })
     .eq('id', client.id)
 
   if (updateError) return res.status(500).json({ error: updateError.message })
@@ -492,9 +505,26 @@ Format de ta réponse (OBLIGATOIRE) :
 
 Corps de l'email en texte brut.`
 
+const PROMPT_INJECTION_RE = /ignore (?:all )?previous instructions|forget your instructions|you are now|system\s*:|<\|im_start\|>/gi
+
+// Retire les séquences connues de prompt injection et logue une alerte si détecté — ne bloque pas la requête
+function sanitizeAiInput(text: string, clientId: string): string
+function sanitizeAiInput(text: string | undefined, clientId: string): string | undefined
+function sanitizeAiInput(text: string | undefined, clientId: string): string | undefined {
+  if (!text) return text
+  let detected = false
+  const cleaned = text.replace(PROMPT_INJECTION_RE, () => { detected = true; return '' })
+  if (detected) console.warn(`[ai] tentative de prompt injection détectée — clientId: ${clientId}`)
+  return cleaned
+}
+
 // POST /client/ai/generate
 clientAuthRouter.post('/ai/generate', authenticateClient, aiLimiter, validate(AiGenerateSchema), async (req, res) => {
-  const { emailType, formationName, tone, objective } = req.body
+  const { emailType } = req.body
+  const clientId = (req as any).clientId as string
+  const formationName = sanitizeAiInput(req.body.formationName, clientId)
+  const tone = sanitizeAiInput(req.body.tone, clientId)
+  const objective = sanitizeAiInput(req.body.objective, clientId)
 
   const userMessage = [
     `Type d'email : ${emailType}`,
@@ -514,7 +544,9 @@ clientAuthRouter.post('/ai/generate', authenticateClient, aiLimiter, validate(Ai
 
 // POST /client/ai/improve
 clientAuthRouter.post('/ai/improve', authenticateClient, aiLimiter, validate(AiImproveSchema), async (req, res) => {
-  const { content, emailType } = req.body
+  const { emailType } = req.body
+  const clientId = (req as any).clientId as string
+  const content = sanitizeAiInput(req.body.content, clientId)
 
   const userMessage = emailType ? `Type d'email : ${emailType}\n\n${content}` : content
 

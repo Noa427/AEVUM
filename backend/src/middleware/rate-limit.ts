@@ -50,6 +50,22 @@ export const loginLimiter = rateLimit({
   message: msg('Trop de tentatives de connexion, réessayez dans 15 minutes.'),
 })
 
+export const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60_000,
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: msg('Trop de tentatives, réessayez dans 15 minutes.'),
+})
+
+export const trackingLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: msg('Trop de requêtes, réessayez dans une minute.'),
+})
+
 export const aiLimiter = rateLimit({
   windowMs: 60_000,
   max: 10,

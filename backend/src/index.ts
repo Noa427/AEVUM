@@ -11,6 +11,11 @@ if (missing.length) {
   process.exit(1)
 }
 
+if (!/^[0-9a-f]{64,}$/i.test(process.env.JWT_SECRET!)) {
+  console.error('JWT_SECRET doit faire au minimum 64 caractères hexadécimaux (32 bytes)')
+  process.exit(1)
+}
+
 const OPTIONAL_ENV_GROUPS = [
   { keys: ['ELEVENLABS_API_KEY'], feature: 'Feature 17 (rapport vidéo)' },
   { keys: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER'], feature: 'Feature 20 (SMS)' },
@@ -35,7 +40,7 @@ import { supportRouter } from './routes/support'
 import { clientAuthRouter } from './routes/clientAuth'
 import { trackingRouter } from './routes/tracking'
 import { errorHandler } from './middleware/error-handler'
-import { apiLimiter, webhookLimiter, simulateLimiter, portalLimiter } from './middleware/rate-limit'
+import { apiLimiter, webhookLimiter, simulateLimiter, portalLimiter, trackingLimiter } from './middleware/rate-limit'
 import {
   runScheduledJobs,
   runCustomAutomations,
@@ -84,7 +89,7 @@ app.use('/api/history', historyRouter)
 app.use('/api/simulate', simulateLimiter, simulateRouter)
 app.use('/client', portalCors, portalLimiter, clientAuthRouter)
 app.use('/api/support', adminCors, apiLimiter, supportRouter)
-app.use('/track', trackingRouter)
+app.use('/track', trackingLimiter, trackingRouter)
 
 app.use(errorHandler)
 

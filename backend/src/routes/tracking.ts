@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { supabase } from '../services/supabase'
-import { GIF_1x1 } from '../utils/tracking'
+import { GIF_1x1, isSafeRedirectUrl } from '../utils/tracking'
 
 export const trackingRouter = Router()
 
@@ -39,8 +39,11 @@ trackingRouter.get('/click/:token', async (req, res) => {
   let decoded: string
   try {
     decoded = decodeURIComponent(rawUrl)
-    new URL(decoded)
   } catch {
+    return res.status(400).send('URL invalide')
+  }
+
+  if (!isSafeRedirectUrl(decoded)) {
     return res.status(400).send('URL invalide')
   }
 

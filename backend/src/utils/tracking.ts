@@ -28,6 +28,16 @@ export async function insertTrackingRow(opts: {
   return id
 }
 
+// N'autorise que les URLs http(s) — bloque javascript:, data: et autres schémas dangereux
+export function isSafeRedirectUrl(url: string): boolean {
+  if (!/^https?:\/\//i.test(url)) return false
+  try {
+    return ['http:', 'https:'].includes(new URL(url).protocol)
+  } catch {
+    return false
+  }
+}
+
 export function injectTracking(html: string, token: string, backendUrl: string): string {
   const pixel = `<img src="${backendUrl}/track/open/${token}" width="1" height="1" style="display:none" alt="">`
   const withPixel = html.includes('</body>')
@@ -37,6 +47,7 @@ export function injectTracking(html: string, token: string, backendUrl: string):
   // Wrap external links — skip already-wrapped tracking links
   return withPixel.replace(/href="(https?:\/\/[^"]+)"/g, (match, url) => {
     if (url.includes('/track/click/')) return match
+    if (!isSafeRedirectUrl(url)) return match
     return `href="${backendUrl}/track/click/${token}?url=${encodeURIComponent(url)}"`
   })
 }

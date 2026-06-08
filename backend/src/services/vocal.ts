@@ -2,6 +2,7 @@
 import twilio from 'twilio'
 import { supabase } from './supabase'
 import { insertTrackingRow } from '../utils/tracking'
+import { maskEmail } from '../utils/maskEmail'
 
 const ELEVENLABS_VOICE_ID = 'EXAVITQu4vr4xnSDxMaL' // Sarah — même voix que videoreport
 
@@ -97,7 +98,7 @@ export async function sendVocalRecovery(clientId: string, studentEmail: string):
       .single()
 
     if (!profile?.phone) {
-      console.log(`[vocal] phone manquant pour ${email} (client ${clientId})`)
+      console.log(`[vocal] phone manquant pour ${maskEmail(email)} (client ${clientId})`)
       return
     }
 
@@ -138,11 +139,15 @@ export async function sendVocalRecovery(clientId: string, studentEmail: string):
       .gte('sent_at', thirtyDaysAgo)
       .maybeSingle()
     if (existingCall) {
-      console.log(`[vocal] appel déjà effectué dans les 30j pour ${email} — ignoré`)
+      console.log(`[vocal] appel déjà effectué dans les 30j pour ${maskEmail(email)} — ignoré`)
       return
     }
 
     const buffer = await generateVocalMessage(text)
+    if (buffer.length > 10 * 1024 * 1024) {
+      console.error(`[vocal] audio généré trop volumineux (${buffer.length} bytes) pour ${maskEmail(email)} — upload annulé`)
+      return
+    }
     const audioUrl = await uploadVocalAudio(buffer, clientId, email)
     const callSid = await makeVocalCall(profile.phone, audioUrl)
 
@@ -156,11 +161,11 @@ export async function sendVocalRecovery(clientId: string, studentEmail: string):
         status: 'sent',
       })
 
-      console.log(`[vocal] appel déclenché → ${email} (callSid: ${callSid})`)
+      console.log(`[vocal] appel déclenché → ${maskEmail(email)} (callSid: ${callSid})`)
     } else {
-      console.warn(`[vocal] appel Twilio non confirmé pour ${email} — tracking non enregistré`)
+      console.warn(`[vocal] appel Twilio non confirmé pour ${maskEmail(email)} — tracking non enregistré`)
     }
   } catch (err: any) {
-    console.error(`[vocal] sendVocalRecovery échoué (${studentEmail}):`, err.message)
+    console.error(`[vocal] sendVocalRecovery échoué (${maskEmail(studentEmail)}):`, err.message)
   }
 }
