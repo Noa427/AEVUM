@@ -76,6 +76,17 @@ export async function makeVocalCall(to: string, audioUrl: string): Promise<strin
 
 export async function sendVocalRecovery(clientId: string, studentEmail: string): Promise<void> {
   try {
+    if (!process.env.TWILIO_FROM_NUMBER) {
+      console.error('[vocal] TWILIO_FROM_NUMBER manquant — appel annulé')
+      await supabase.from('activity_logs').insert({
+        client_id: clientId,
+        action_type: 'vocal_recovery_error',
+        payload_json: { reason: 'TWILIO_FROM_NUMBER_missing' },
+        status: 'failed',
+      })
+      return
+    }
+
     const email = studentEmail.toLowerCase()
 
     const { data: profile } = await supabase

@@ -1190,6 +1190,10 @@ clientAuthRouter.post('/vocal/send', authenticateClient, planGate({ option: 'opt
     return res.status(400).json({ error: 'student_id invalide' })
   }
 
+  if (!process.env.TWILIO_FROM_NUMBER) {
+    return res.status(503).json({ error: 'SERVICE_UNAVAILABLE', message: 'Appel vocal temporairement indisponible.' })
+  }
+
   const { data: vocalCfg } = await supabase
     .from('client_configs')
     .select('encrypted_value')
