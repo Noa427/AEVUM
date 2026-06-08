@@ -5,6 +5,7 @@ import { randomInt } from 'crypto'
 import { supabase } from '../services/supabase'
 import { encrypt, decrypt } from '../services/encryption'
 import { authenticateClient } from '../middleware/authenticateClient'
+import { planGate, checkGate, getClientOptions } from '../middleware/planGate'
 import { loginLimiter, aiLimiter, forgotPasswordLimiter, portalLimiter } from '../middleware/rate-limit'
 import { validate } from '../middleware/validate'
 import { callClaudeChat } from '../services/claude'
@@ -194,6 +195,8 @@ clientAuthRouter.get('/me', authenticateClient, async (req, res) => {
 
   if (error || !data) return res.status(404).json({ error: 'Client introuvable' })
 
+  const options = await getClientOptions(clientId)
+
   res.json({
     email: data.client_email,
     mustChangePassword: data.must_change_password,
@@ -201,6 +204,9 @@ clientAuthRouter.get('/me', authenticateClient, async (req, res) => {
     pausedUntil: data.paused_until ?? null,
     whatsappConnected: data.whatsapp_active ?? false,
     plan: data.plan ?? 'standard',
+    option_checkout: options.option_checkout,
+    option_vocal: options.option_vocal,
+    option_notaire: options.option_notaire,
   })
 })
 
@@ -610,6 +616,11 @@ clientAuthRouter.put('/configs', authenticateClient, validate(ConfigSchema), asy
 
   const { formationId, unauthorized } = await getFormationContext(clientId, req)
   if (unauthorized) return res.status(403).json({ error: 'Formation introuvable ou accès refusé' })
+
+  if (config_type === 'rapport_video_active' && value === 'true') {
+    const failure = await checkGate(clientId, { plan: 'premium' })
+    if (failure) return res.status(403).json(failure)
+  }
 
   const encrypted_value = encrypt(value)
 
@@ -1171,7 +1182,7 @@ clientAuthRouter.delete('/formations/:id', authenticateClient, async (req, res) 
 })
 
 // POST /client/vocal/send
-clientAuthRouter.post('/vocal/send', authenticateClient, aiLimiter, async (req, res) => {
+clientAuthRouter.post('/vocal/send', authenticateClient, planGate({ option: 'option_vocal' }), aiLimiter, async (req, res) => {
   const clientId = (req as any).clientId as string
   const { student_id } = req.body as { student_id?: string }
 

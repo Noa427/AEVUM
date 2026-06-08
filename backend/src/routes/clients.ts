@@ -3,6 +3,7 @@ import { supabase } from '../services/supabase'
 import { encrypt, decrypt } from '../services/encryption'
 import { requireAuth } from '../middleware/auth'
 import { generateClientCredentials } from '../utils/generateClientCredentials'
+import { OPTION_ADDON_MAP, OptionKey } from '../middleware/planGate'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const ADDON_CONFIG_TYPES = ['addon_f11', 'addon_f13', 'addon_f18'] as const
@@ -74,14 +75,26 @@ clientsRouter.get('/:id', async (req, res) => {
 clientsRouter.post('/', async (req, res) => {
   const userId = (req as any).userId
   const { name, email, stripe_webhook_secret, sender_name, auto_mode = true } = req.body
+  const plan = req.body.plan ?? 'standard'
+  const options: Record<OptionKey, boolean> = {
+    option_checkout: req.body.option_checkout ?? false,
+    option_vocal: req.body.option_vocal ?? false,
+    option_notaire: req.body.option_notaire ?? false,
+  }
 
   if (!name || !email || !stripe_webhook_secret || !sender_name) {
     return res.status(400).json({ error: 'Champs requis : name, email, stripe_webhook_secret, sender_name' })
   }
+  if (!['standard', 'premium'].includes(plan)) {
+    return res.status(400).json({ error: 'Plan invalide' })
+  }
+  for (const [key, val] of Object.entries(options)) {
+    if (typeof val !== 'boolean') return res.status(400).json({ error: `${key} doit être un booléen` })
+  }
 
   const { data: client, error } = await supabase
     .from('clients')
-    .insert({ user_id: userId, name, email, auto_mode })
+    .insert({ user_id: userId, name, email, auto_mode, plan })
     .select()
     .single()
   if (error) return res.status(500).json({ error: error.message })
@@ -89,6 +102,11 @@ clientsRouter.post('/', async (req, res) => {
   const { error: configError } = await supabase.from('client_configs').insert([
     { client_id: client.id, config_type: 'stripe_webhook_secret', encrypted_value: encrypt(stripe_webhook_secret) },
     { client_id: client.id, config_type: 'sender_name', encrypted_value: encrypt(sender_name) },
+    ...Object.entries(options).map(([optionKey, val]) => ({
+      client_id: client.id,
+      config_type: OPTION_ADDON_MAP[optionKey as OptionKey],
+      encrypted_value: encrypt(String(val)),
+    })),
   ])
   if (configError) {
     await supabase.from('clients').delete().eq('id', client.id)
@@ -160,6 +178,73 @@ clientsRouter.put('/:id', async (req, res) => {
       { onConflict: 'client_id,config_type' }
     )
   }
+
+  res.json(client)
+})
+
+clientsRouter.put('/:id/plan', async (req, res) => {
+  if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID invalide' })
+  const userId = (req as any).userId
+  const { plan } = req.body
+
+  if (plan !== undefined && !['standard', 'premium'].includes(plan)) {
+    return res.status(400).json({ error: 'Plan invalide' })
+  }
+
+  const optionUpdates: Partial<Record<OptionKey, boolean>> = {}
+  for (const optionKey of Object.keys(OPTION_ADDON_MAP) as OptionKey[]) {
+    const val = req.body[optionKey]
+    if (val === undefined) continue
+    if (typeof val !== 'boolean') return res.status(400).json({ error: `${optionKey} doit être un booléen` })
+    optionUpdates[optionKey] = val
+  }
+
+  if (plan === undefined && Object.keys(optionUpdates).length === 0) {
+    return res.status(400).json({ error: 'Aucun champ à mettre à jour' })
+  }
+
+  const { data: existing, error: fetchError } = await supabase
+    .from('clients')
+    .select('id, user_id, name, email, plan, payment_status, created_at')
+    .eq('id', req.params.id)
+    .eq('user_id', userId)
+    .single()
+  if (fetchError || !existing) return res.status(404).json({ error: 'Client introuvable' })
+
+  const ancien_plan = existing.plan
+  let client = existing
+
+  if (plan !== undefined && plan !== ancien_plan) {
+    const { data, error } = await supabase
+      .from('clients')
+      .update({ plan })
+      .eq('id', req.params.id)
+      .eq('user_id', userId)
+      .select('id, user_id, name, email, plan, payment_status, created_at')
+      .single()
+    if (error || !data) return res.status(500).json({ error: error?.message ?? 'Mise à jour impossible' })
+    client = data
+  }
+
+  if (Object.keys(optionUpdates).length > 0) {
+    const { error: configError } = await supabase.from('client_configs').upsert(
+      Object.entries(optionUpdates).map(([optionKey, val]) => ({
+        client_id: req.params.id,
+        config_type: OPTION_ADDON_MAP[optionKey as OptionKey],
+        encrypted_value: encrypt(String(val)),
+      })),
+      { onConflict: 'client_id,config_type' }
+    )
+    if (configError) return res.status(500).json({ error: configError.message })
+  }
+
+  await supabase.from('activity_logs').insert({
+    client_id: req.params.id,
+    user_id: userId,
+    action_type: 'plan_updated',
+    payload_json: { ancien_plan, nouveau_plan: client.plan, options: optionUpdates },
+    status: 'ok',
+  })
 
   res.json(client)
 })
