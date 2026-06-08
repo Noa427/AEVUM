@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { api } from '@/lib/api'
 import { ClientForm } from '@/components/client-form'
+import { SubscriptionModal } from '@/components/subscription-modal'
 import { TaskDrawer } from '@/components/task-drawer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,6 +19,7 @@ interface Client {
   email: string
   created_at: string
   auto_mode: boolean
+  plan: 'standard' | 'premium'
 }
 
 interface Task {
@@ -45,6 +47,9 @@ interface PilierConfigs {
   upsell_product_name: string
   upsell_url: string
   upsell_price: string
+  addon_f11: string
+  addon_f13: string
+  addon_f18: string
 }
 
 type Tab = 'tasks' | 'history' | 'settings'
@@ -136,6 +141,9 @@ export default function ClientDetailPage() {
   // Piliers save
   const [savingConfigs, setSavingConfigs] = useState(false)
 
+  // Abonnement
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false)
+
   const loadClient = useCallback(async () => {
     try {
       const data = await api.get<Client>(`/api/clients/${id}`)
@@ -171,7 +179,7 @@ export default function ClientDetailPage() {
   useEffect(() => { loadClient() }, [loadClient])
   useEffect(() => { loadTasks() }, [loadTasks])
   useEffect(() => { if (tab === 'history') loadHistory() }, [tab, loadHistory])
-  useEffect(() => { if (tab === 'settings') loadConfigs() }, [tab, loadConfigs])
+  useEffect(() => { loadConfigs() }, [loadConfigs])
 
   async function handleDelete() {
     if (!confirm(`Supprimer le client "${client?.name}" ? Cette action est irréversible.`)) return
@@ -321,6 +329,37 @@ export default function ClientDetailPage() {
             {' · '}Mode {client.auto_mode ? 'automatique' : 'manuel'}
           </p>
         </div>
+      </div>
+
+      {/* Abonnement */}
+      <div className="card-elevated p-5 flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold border ${
+            client.plan === 'premium'
+              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+              : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30'
+          }`}>
+            Plan {client.plan === 'premium' ? 'Premium' : 'Standard'}
+          </span>
+          {configs.addon_f11 === 'true' && (
+            <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">Abandon checkout</span>
+          )}
+          {configs.addon_f13 === 'true' && (
+            <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-violet-500/10 text-violet-400 border border-violet-500/30">Vocal IA</span>
+          )}
+          {configs.addon_f18 === 'true' && (
+            <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/30">Module Notaire</span>
+          )}
+          {configs.addon_f11 !== 'true' && configs.addon_f13 !== 'true' && configs.addon_f18 !== 'true' && (
+            <span className="text-xs text-muted-foreground">Aucune option active</span>
+          )}
+        </div>
+        <Button variant="outline" size="sm" onClick={() => setShowSubscriptionModal(true)} className="text-xs gap-1.5">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+          </svg>
+          Modifier
+        </Button>
       </div>
 
       {/* Onglets */}
@@ -647,6 +686,21 @@ export default function ClientDetailPage() {
         initialData={client}
         onClose={() => setShowEdit(false)}
         onCreated={() => { setShowEdit(false); loadClient() }}
+      />
+
+      <SubscriptionModal
+        open={showSubscriptionModal}
+        client={{ id: client.id, name: client.name, email: client.email, plan: client.plan }}
+        options={{
+          option_checkout: configs.addon_f11 === 'true',
+          option_vocal: configs.addon_f13 === 'true',
+          option_notaire: configs.addon_f18 === 'true',
+        }}
+        onClose={() => setShowSubscriptionModal(false)}
+        onSaved={(next) => {
+          setClient(c => c ? { ...c, plan: next.plan } : c)
+          setConfigs(c => ({ ...c, addon_f11: next.option_checkout ? 'true' : 'false', addon_f13: next.option_vocal ? 'true' : 'false', addon_f18: next.option_notaire ? 'true' : 'false' }))
+        }}
       />
     </div>
   )
