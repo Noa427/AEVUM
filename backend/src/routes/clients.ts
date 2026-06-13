@@ -165,13 +165,13 @@ clientsRouter.put('/:id', validate(ClientUpdateSchema), async (req, res) => {
   if (stripe_webhook_secret) {
     await supabase.from('client_configs').upsert(
       { client_id: client.id, config_type: 'stripe_webhook_secret', encrypted_value: encrypt(stripe_webhook_secret) },
-      { onConflict: 'client_id,config_type' }
+      { onConflict: 'client_id,config_type,formation_key' }
     )
   }
   if (sender_name) {
     await supabase.from('client_configs').upsert(
       { client_id: client.id, config_type: 'sender_name', encrypted_value: encrypt(sender_name) },
-      { onConflict: 'client_id,config_type' }
+      { onConflict: 'client_id,config_type,formation_key' }
     )
   }
 
@@ -229,7 +229,7 @@ clientsRouter.put('/:id/plan', async (req, res) => {
         config_type: OPTION_ADDON_MAP[optionKey as OptionKey],
         encrypted_value: encrypt(String(val)),
       })),
-      { onConflict: 'client_id,config_type' }
+      { onConflict: 'client_id,config_type,formation_key' }
     )
     if (configError) return res.status(500).json({ error: configError.message })
   }
@@ -303,7 +303,7 @@ clientsRouter.put('/:id/configs', async (req, res) => {
 
   const { error } = await supabase
     .from('client_configs')
-    .upsert(upserts, { onConflict: 'client_id,config_type' })
+    .upsert(upserts, { onConflict: 'client_id,config_type,formation_key' })
   if (error) return res.status(500).json({ error: error.message })
 
   res.json({ ok: true })
