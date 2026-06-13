@@ -49,6 +49,7 @@
 - Audit complet + 19 corrections 2026-06-03 : sécurité (webhooks hors adminCors, blacklist crons, idempotence), bugs (POST→PUT settings, PUT clients guard, tracking send-manual), UX portail (pagination élèves, panel upsell, labels history, Premium gate rapport vidéo), Vitrine (Se connecter navbar, CGU tarifs, footer légal)
 - Audit graphify 2026-06-07 : dérive de prix détectée — le changement de grille tarifaire du 2026-06-03 (commit badc2ba, Premium 1290/F11 +200/F13 +350) n'avait pas été répercuté dans le code (dashboard.ts + clients/page.tsx restaient sur 1200/150/300, committés 2 jours avant). Corrigé sur `fix/prix-dashboard`. README.md racine également mis à jour (branding AEVUM, Next.js 14, RESEND_FROM_EMAIL, route webhook réelle) sur `chore/readme-update`
 - Plan gating backend 2026-06-08 : middleware planGate.ts (checkGate/planGate → 403 PLAN_REQUIRED|OPTION_REQUIRED), options option_checkout/option_vocal/option_notaire exposées comme alias de addon_f11/f13/f18 (lecture/écriture via client_configs, pas de nouvelles colonnes), gates posés sur POST /client/vocal/send (option_vocal) et PUT /client/configs pour rapport_video_active (plan premium), routes admin POST /api/clients + PUT /api/clients/:id/plan (gestion plan/options + log activity_logs 'plan_updated'). Sur `feat/plan-gating-backend`
+- Dette technique 2026-06-13 : validation Zod (ClientUpdateSchema) sur PUT /api/clients/:id pour sender_name/stripe_webhook_secret (champ absent vs vide) (110c6d1) ; gate vocal_ia_active sur addon_f13/option_vocal dans PUT /client/configs (3a2bea6)
 
 ## STRUCTURE DES FICHIERS
 
@@ -229,12 +230,10 @@ Stockage : `clients.plan` (standard/premium) + `clients.payment_status` (active/
 - Multi-tenant admin : plusieurs admins, isolation par user_id
 - Notifications push/Slack sur nouveau webhook reçu
 - Interface de configuration des délais J3/J7 par client
-- Gate vocal_ia_active sur addon_f13 dans PUT /client/configs (côté backend ou Vitrine) — distinct du planGate déjà posé sur POST /client/vocal/send (celui-ci bloque l'envoi, pas l'activation de la config)
 - Front : exploiter option_checkout/option_vocal/option_notaire renvoyés par /client/me (UI conditionnelle portail) + UI admin pour PUT /api/clients/:id/plan
 
 ## À FAIRE (dette technique signalée)
 
 - `sendVideoReport` et `sendWeeklyReport` ont la même fenêtre lundi 08h UTC — deux reports lourds en simultané
-- `PUT /api/clients/:id` : fields `sender_name`/`stripe_webhook_secret` testés en falsy (`!val`) — un empty string bypass le 400
 - `client_configs` upsert ignore `formation_id` : deux configs du même type pour des formations différentes ne coexistent pas
 - `/client/automations` retourne `recouvrement: true` si stripe_webhook_secret présent — indicateur peu fiable
