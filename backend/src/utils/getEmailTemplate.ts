@@ -68,14 +68,27 @@ function inject(text: string, vars: Record<string, string>): string {
 export async function getEmailTemplate(
   clientId: string,
   configType: EmailTemplateType,
-  variables: Record<string, string> = {}
+  variables: Record<string, string> = {},
+  formationId?: string | null
 ): Promise<EmailTemplate> {
-  const { data } = await supabase
+  let query = supabase
     .from('client_configs')
     .select('encrypted_value')
     .eq('client_id', clientId)
     .eq('config_type', configType)
-    .single()
+
+  query = formationId ? query.eq('formation_id', formationId) : query.is('formation_id', null)
+  let { data } = await query.maybeSingle()
+
+  if (!data && formationId) {
+    ;({ data } = await supabase
+      .from('client_configs')
+      .select('encrypted_value')
+      .eq('client_id', clientId)
+      .eq('config_type', configType)
+      .is('formation_id', null)
+      .maybeSingle())
+  }
 
   if (data?.encrypted_value) {
     try {

@@ -691,6 +691,8 @@ clientAuthRouter.post('/test-send', authenticateClient, portalLimiter, validate(
   const { config_type } = req.body
 
   try {
+    const { formationId } = await getFormationContext(clientId, req)
+
     const { data: senderRow } = await supabase
       .from('client_configs')
       .select('encrypted_value')
@@ -702,7 +704,7 @@ clientAuthRouter.post('/test-send', authenticateClient, portalLimiter, validate(
       ? (() => { try { return decrypt(senderRow.encrypted_value) } catch { return 'Test' } })()
       : 'Test'
 
-    const tpl = await getEmailTemplate(clientId, config_type as any, TEST_VARS)
+    const tpl = await getEmailTemplate(clientId, config_type as any, TEST_VARS, formationId)
     const html = wrapEmailHtml(tpl.body.replace(/\n/g, '<br>'), senderName)
 
     await sendEmail({
@@ -1051,6 +1053,8 @@ clientAuthRouter.post('/send-manual', authenticateClient, validate(ManualSendSch
     return res.status(400).json({ error: 'config_type invalide' })
   }
 
+  const { formationId } = await getFormationContext(clientId, req)
+
   const { data: senderRow } = await supabase
     .from('client_configs')
     .select('encrypted_value')
@@ -1087,7 +1091,7 @@ clientAuthRouter.post('/send-manual', authenticateClient, validate(ManualSendSch
   let htmlBody: string
 
   if (isTemplateType) {
-    const tpl = await getEmailTemplate(clientId, config_type as any, vars)
+    const tpl = await getEmailTemplate(clientId, config_type as any, vars, formationId)
     subject = tpl.subject
     htmlBody = wrapEmailHtml(tpl.body.replace(/\n/g, '<br>'), senderName)
   } else {
