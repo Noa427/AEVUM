@@ -50,6 +50,7 @@
 - Audit graphify 2026-06-07 : dérive de prix détectée — le changement de grille tarifaire du 2026-06-03 (commit badc2ba, Premium 1290/F11 +200/F13 +350) n'avait pas été répercuté dans le code (dashboard.ts + clients/page.tsx restaient sur 1200/150/300, committés 2 jours avant). Corrigé sur `fix/prix-dashboard`. README.md racine également mis à jour (branding AEVUM, Next.js 14, RESEND_FROM_EMAIL, route webhook réelle) sur `chore/readme-update`
 - Plan gating backend 2026-06-08 : middleware planGate.ts (checkGate/planGate → 403 PLAN_REQUIRED|OPTION_REQUIRED), options option_checkout/option_vocal/option_notaire exposées comme alias de addon_f11/f13/f18 (lecture/écriture via client_configs, pas de nouvelles colonnes), gates posés sur POST /client/vocal/send (option_vocal) et PUT /client/configs pour rapport_video_active (plan premium), routes admin POST /api/clients + PUT /api/clients/:id/plan (gestion plan/options + log activity_logs 'plan_updated'). Sur `feat/plan-gating-backend`
 - Dette technique 2026-06-13 : validation Zod (ClientUpdateSchema) sur PUT /api/clients/:id pour sender_name/stripe_webhook_secret (champ absent vs vide) (110c6d1) ; gate vocal_ia_active sur addon_f13/option_vocal dans PUT /client/configs (3a2bea6)
+- client_configs multi-formation 2026-06-13 : migration 026 (formation_key généré + UNIQUE (client_id, config_type, formation_key)) — les configs template_* sont désormais par formation, le reste reste global (formation_id NULL). GET/PUT /client/configs et getEmailTemplate adaptés (254cd2a, 0d94f7a, ab2a593, 7cdff25)
 
 ## STRUCTURE DES FICHIERS
 
@@ -208,6 +209,9 @@ Vitrine (.env) :
 | 021 | +plan (standard/premium) + payment_status (active/unpaid) sur clients | Appliquée |
 | 022 | Table ai_usage_logs (tokens + coût USD par appel IA, RLS activé) | Appliquée |
 | 023 | +id UUID sur student_profiles (PK secondaire unique) | Appliquée |
+| 024 | +password_reset_used_at sur clients | Appliquée |
+| 025 | RLS activé sur tables sans policy (service_role bypass) | Appliquée |
+| 026 | client_configs.formation_key (généré) + UNIQUE (client_id, config_type, formation_key) | Appliquée |
 
 ## MODÈLE D'ABONNEMENT
 
@@ -235,5 +239,4 @@ Stockage : `clients.plan` (standard/premium) + `clients.payment_status` (active/
 ## À FAIRE (dette technique signalée)
 
 - `sendVideoReport` et `sendWeeklyReport` ont la même fenêtre lundi 08h UTC — deux reports lourds en simultané
-- `client_configs` upsert ignore `formation_id` : deux configs du même type pour des formations différentes ne coexistent pas
 - `/client/automations` retourne `recouvrement: true` si stripe_webhook_secret présent — indicateur peu fiable
