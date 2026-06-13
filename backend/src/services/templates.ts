@@ -1,5 +1,7 @@
 export type TaskType =
   | 'failed_payment'
+  | 'failed_payment_j3'
+  | 'failed_payment_j7'
   | 'onboarding_j0'
   | 'onboarding_j3'
   | 'onboarding_j7'
@@ -14,6 +16,8 @@ export function getTemplate(
 ): { subject_hint: string; prompt: string } {
   switch (task_type) {
     case 'failed_payment':
+    case 'failed_payment_j3':
+    case 'failed_payment_j7':
       return { subject_hint: 'Relance paiement', prompt: buildPromptFailedPayment(ctx) }
     case 'onboarding_j0':
       return { subject_hint: 'Bienvenue', prompt: buildPromptOnboardingJ0(ctx) }

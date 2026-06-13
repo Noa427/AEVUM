@@ -12,3 +12,6 @@ build/
 .env.production.local
 Thumbs.db
 coverage/
+.claude/
+.superpowers/
+graphify-out/
