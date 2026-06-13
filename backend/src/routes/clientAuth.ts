@@ -470,7 +470,9 @@ clientAuthRouter.get('/configs', authenticateClient, async (req, res) => {
     .from('client_configs')
     .select('config_type, encrypted_value')
     .eq('client_id', clientId)
-  if (formationId) cfgQuery = cfgQuery.eq('formation_id', formationId)
+  cfgQuery = formationId
+    ? cfgQuery.or(`formation_id.eq.${formationId},formation_id.is.null`)
+    : cfgQuery.is('formation_id', null)
   const { data, error } = await cfgQuery
 
   if (error) return res.status(500).json({ error: error.message })
@@ -660,12 +662,13 @@ clientAuthRouter.put('/configs', authenticateClient, validate(ConfigSchema), asy
   }
 
   const encrypted_value = encrypt(value)
+  const isFormationScoped = config_type.startsWith('template_')
 
   const { error } = await supabase
     .from('client_configs')
     .upsert(
-      { client_id: clientId, config_type, encrypted_value, formation_id: formationId },
-      { onConflict: 'client_id,config_type' }
+      { client_id: clientId, config_type, encrypted_value, formation_id: isFormationScoped ? formationId : null },
+      { onConflict: 'client_id,config_type,formation_key' }
     )
 
   if (error) return res.status(500).json({ error: error.message })
