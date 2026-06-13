@@ -654,6 +654,11 @@ clientAuthRouter.put('/configs', authenticateClient, validate(ConfigSchema), asy
     if (failure) return res.status(403).json(failure)
   }
 
+  if (config_type === 'vocal_ia_active' && value === 'true') {
+    const failure = await checkGate(clientId, { option: 'option_vocal' })
+    if (failure) return res.status(403).json(failure)
+  }
+
   const encrypted_value = encrypt(value)
 
   const { error } = await supabase
