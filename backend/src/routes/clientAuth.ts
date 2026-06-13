@@ -592,6 +592,17 @@ clientAuthRouter.post('/automations/custom', authenticateClient, validate(Automa
     return res.status(400).json({ error: 'trigger_date requis pour specific_date' })
   }
 
+  let countQuery = supabase
+    .from('custom_automations')
+    .select('id', { count: 'exact', head: true })
+    .eq('client_id', clientId)
+  if (formationId) countQuery = countQuery.eq('formation_id', formationId)
+  const { count, error: countError } = await countQuery
+  if (countError) return res.status(500).json({ error: countError.message })
+  if ((count ?? 0) >= 10) {
+    return res.status(400).json({ error: 'Limite de 10 automatisations personnalisées atteinte' })
+  }
+
   const { data, error } = await supabase
     .from('custom_automations')
     .insert({ client_id: clientId, name, trigger_type, trigger_delay_days, trigger_date, subject, body, formation_id: formationId })
