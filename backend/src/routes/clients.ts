@@ -2,6 +2,8 @@ import { Router } from 'express'
 import { supabase } from '../services/supabase'
 import { encrypt, decrypt } from '../services/encryption'
 import { requireAuth } from '../middleware/auth'
+import { validate } from '../middleware/validate'
+import { ClientUpdateSchema } from '../schemas/client'
 import { generateClientCredentials } from '../utils/generateClientCredentials'
 import { OPTION_ADDON_MAP, OptionKey } from '../middleware/planGate'
 
@@ -122,8 +124,8 @@ clientsRouter.post('/', async (req, res) => {
   res.status(201).json(client)
 })
 
-clientsRouter.put('/:id', async (req, res) => {
-  if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID invalide' })
+clientsRouter.put('/:id', validate(ClientUpdateSchema), async (req, res) => {
+  if (!UUID_RE.test(String(req.params.id))) return res.status(400).json({ error: 'ID invalide' })
   const userId = (req as any).userId
   const { name, email, stripe_webhook_secret, sender_name, auto_mode, plan, payment_status } = req.body
 
@@ -131,16 +133,10 @@ clientsRouter.put('/:id', async (req, res) => {
   if (typeof name !== 'undefined') update.name = name
   if (typeof email !== 'undefined') update.email = email
   if (typeof auto_mode !== 'undefined') update.auto_mode = auto_mode
-  if (plan !== undefined) {
-    if (!['standard', 'premium'].includes(plan)) return res.status(400).json({ error: 'Plan invalide' })
-    update.plan = plan
-  }
-  if (payment_status !== undefined) {
-    if (!['active', 'unpaid'].includes(payment_status)) return res.status(400).json({ error: 'Statut paiement invalide' })
-    update.payment_status = payment_status
-  }
+  if (typeof plan !== 'undefined') update.plan = plan
+  if (typeof payment_status !== 'undefined') update.payment_status = payment_status
 
-  if (Object.keys(update).length === 0 && !stripe_webhook_secret && !sender_name) {
+  if (Object.keys(update).length === 0 && typeof stripe_webhook_secret === 'undefined' && typeof sender_name === 'undefined') {
     return res.status(400).json({ error: 'Aucun champ à mettre à jour' })
   }
 

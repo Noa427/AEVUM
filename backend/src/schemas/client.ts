@@ -62,6 +62,16 @@ export const ConfigSchema = z.object({
   value: z.string().max(50000),
 })
 
+export const ClientUpdateSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  email: z.string().email().max(254).optional(),
+  stripe_webhook_secret: z.string().min(1).max(500).optional(),
+  sender_name: z.string().min(1).max(200).optional(),
+  auto_mode: z.boolean().optional(),
+  plan: z.enum(['standard', 'premium']).optional(),
+  payment_status: z.enum(['active', 'unpaid']).optional(),
+})
+
 export const AutomationSchema = z.object({
   name: z.string().min(1).max(100),
   trigger_type: z.enum(VALID_TRIGGER_TYPES),
