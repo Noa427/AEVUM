@@ -277,8 +277,8 @@ export default function DashboardPage() {
             <p className="text-[10px] text-muted-foreground mb-3">Modules vendus en supplément</p>
             <div className="space-y-2.5">
               {[
-                { key: 'f11', label: 'Abandons checkout', price: '+150€', color: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
-                { key: 'f13', label: 'Récup. vocale IA', price: '+300€', color: 'bg-violet-500/10 text-violet-400 border-violet-500/20' },
+                { key: 'f11', label: 'Abandons checkout', price: '+200€', color: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
+                { key: 'f13', label: 'Récup. vocale IA', price: '+350€', color: 'bg-violet-500/10 text-violet-400 border-violet-500/20' },
                 { key: 'f18', label: 'Module Notaire', price: '+149€/dos.', color: 'bg-rose-500/10 text-rose-400 border-rose-500/20' },
               ].map(({ key, label, price, color }) => {
                 const opt = data.options_revenue[key as 'f11' | 'f13' | 'f18']

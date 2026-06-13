@@ -8,8 +8,8 @@ dashboardRouter.use(requireAuth)
 
 const USD_TO_EUR = 0.92
 const PRICE: Record<string, number> = {
-  standard: 690, premium: 1200,
-  addon_f11: 150, addon_f13: 300, addon_f18: 149,
+  standard: 690, premium: 1290,
+  addon_f11: 200, addon_f13: 350, addon_f18: 149,
   email: 0.001,
 }
 const ADDON_TYPES = ['addon_f11', 'addon_f13', 'addon_f18'] as const

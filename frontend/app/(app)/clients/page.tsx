@@ -18,7 +18,7 @@ interface ClientRow {
   addons: string[]
 }
 
-const MRR = { standard: 690, premium: 1200, addon_f11: 150, addon_f13: 300, addon_f18: 149 }
+const MRR = { standard: 690, premium: 1290, addon_f11: 200, addon_f13: 350, addon_f18: 149 }
 
 function calcMrr(plan: string, addons: string[]): number {
   const base = plan === 'premium' ? MRR.premium : MRR.standard
@@ -38,8 +38,8 @@ type FilterAddon = 'all' | 'addon_f11' | 'addon_f13' | 'addon_f18' | 'none'
 type SortBy = 'name_asc' | 'name_desc' | 'mrr_desc' | 'mrr_asc' | 'plan' | 'date_desc'
 
 const ADDON_META = [
-  { key: 'addon_f11', label: 'F11', price: '+150€', color: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
-  { key: 'addon_f13', label: 'F13', price: '+300€', color: 'bg-violet-500/10 text-violet-400 border-violet-500/30' },
+  { key: 'addon_f11', label: 'F11', price: '+200€', color: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
+  { key: 'addon_f13', label: 'F13', price: '+350€', color: 'bg-violet-500/10 text-violet-400 border-violet-500/30' },
   { key: 'addon_f18', label: 'F18', price: '+149€', color: 'bg-rose-500/10 text-rose-400 border-rose-500/30' },
 ]
 
