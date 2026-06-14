@@ -242,10 +242,10 @@ Stockage : `clients.plan` (standard/premium) + `clients.payment_status` (active/
 ## PROCHAINE FEATURE À CODER
 
 - Intégration Stripe côté admin pour paiement automatique clients — reportée 2026-06-14, scope à définir (facturation récurrente vs lien de paiement) quand le besoin sera clair
-- Multi-tenant admin : plusieurs admins, isolation par user_id
 
 ## À FAIRE (dette technique signalée)
 
 - `sendVideoReport` et `sendWeeklyReport` ont la même fenêtre lundi 08h UTC — deux reports lourds en simultané (corrigé : sendVideoReport décalé à 9h UTC, cron.ts)
 - `/client/automations` retourne `recouvrement: true` si stripe_webhook_secret présent — indicateur peu fiable (corrigé : reflète template_failed_payment_j1 configuré, clientAuth.ts)
 - Audit sécurité 2026-06-14 : IDOR multi-tenant — corrigé : toutes les lectures admin scopées sur `user_id` : `clients.ts` (`GET /`, `GET /:id`, `GET /:id/configs`), `tasks.ts` (`GET /`, `POST /:id/preview`, `POST /:id/send` via `clients!inner(...)` + `.eq('clients.user_id', userId)` ou vérif propriétaire avant action), `history.ts` (`GET /`), `dashboard.ts` (agrégation scopée par client_id du user), `support.ts` (`POST /inbound` vérifie propriétaire du client_id du body), `simulate.ts` (`POST /` vérifie propriétaire avant insertion)
+- Multi-tenant admin 2026-06-14 — état documenté (pas de code à ce stade) : tout ce qui touche aux `clients` et données liées (tasks, history, dashboard, reports, configs) est déjà scopé par `user_id` (POST /api/clients assigne `user_id: userId`). Le seul point partagé entre admins est la table `settings` (clé/valeur globale, sans `user_id`) : `anthropic_api_key`, `admin_anthropic_api_key`, `infra_monthly_cost`, `ai_quota_eur_month_default`, `slack_webhook_url`. Si un 2e admin est créé via Supabase Auth, il aura ses propres clients isolés mais partagera ces réglages globaux. À traiter (ajouter `user_id` à `settings` + migration) seulement quand un 2e admin réel est prévu.
