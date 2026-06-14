@@ -28,8 +28,16 @@ async function getApiKey(): Promise<string> {
   return decrypt(data.value)
 }
 
-async function callAnthropicMessage(userMessage: string, model: string, system?: string, clientId?: string): Promise<string> {
-  const apiKey = await getApiKey()
+async function getAdminApiKey(): Promise<string> {
+  const { data } = await supabase.from('settings').select('value').eq('key', 'admin_anthropic_api_key').maybeSingle()
+  if (data?.value) {
+    try { return decrypt(data.value) } catch {}
+  }
+  return getApiKey()
+}
+
+async function callAnthropicMessage(userMessage: string, model: string, system?: string, clientId?: string, apiKeyOverride?: string): Promise<string> {
+  const apiKey = apiKeyOverride ?? await getApiKey()
   const anthropic = new Anthropic({ apiKey, timeout: 30_000 })
 
   const message = await withRetry(() =>
@@ -63,4 +71,9 @@ export async function callClaude(prompt: string, model = 'claude-haiku-4-5-20251
 
 export async function callClaudeChat(userMessage: string, system: string, model = 'claude-haiku-4-5-20251001', clientId?: string): Promise<string> {
   return callAnthropicMessage(userMessage, model, system, clientId)
+}
+
+export async function callClaudeAdmin(prompt: string, model = 'claude-sonnet-4-6'): Promise<string> {
+  const apiKey = await getAdminApiKey()
+  return callAnthropicMessage(prompt, model, undefined, undefined, apiKey)
 }

@@ -8,6 +8,7 @@ import { getEmailTemplate } from './utils/getEmailTemplate'
 import { sendEmailWithChannels } from './utils/sendMultiChannel'
 import { generateWeeklyVideo, WeeklyStats } from './services/videoreport'
 import { sendVocalRecovery } from './services/vocal'
+import { generateBusinessReport } from './services/businessReport'
 
 async function recoverStuckTasks(): Promise<void> {
   const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString()
@@ -547,6 +548,26 @@ export async function sendWeeklyReport(): Promise<void> {
       console.log(`[cron] rapport hebdo → ${client.email}`)
     } catch (err: any) {
       console.error(`[cron] rapport hebdo échoué (${client.name}):`, err.message)
+    }
+  }
+}
+
+export async function sendBusinessReport(): Promise<void> {
+  const now = new Date()
+  if (now.getUTCDay() !== 1 || now.getUTCHours() !== 10) return
+
+  const { data: clients } = await supabase.from('clients').select('user_id')
+  const userIds = [...new Set((clients ?? []).map(c => c.user_id).filter(Boolean))]
+
+  for (const userId of userIds) {
+    try {
+      const { data: userData, error } = await supabase.auth.admin.getUserById(userId)
+      const email = userData?.user?.email
+      if (error || !email) continue
+      await generateBusinessReport(userId, email)
+      console.log(`[cron] rapport business AEVUM → ${email}`)
+    } catch (err: any) {
+      console.error(`[cron] rapport business AEVUM échoué (${userId}):`, err.message)
     }
   }
 }

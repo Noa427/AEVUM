@@ -21,6 +21,7 @@ settingsRouter.get('/', async (_req, res) => {
       return isNaN(v) ? DEFAULT_AI_QUOTA_EUR_MONTH : v
     })(),
     has_slack_webhook: !!map['slack_webhook_url'],
+    has_admin_api_key: !!map['admin_anthropic_api_key'],
   })
 })
 
@@ -42,7 +43,25 @@ settingsRouter.get('/test-anthropic', async (_req, res) => {
 })
 
 settingsRouter.put('/', async (req, res) => {
-  const { auto_mode, anthropic_api_key, infra_monthly_cost, ai_quota_eur_month_default, slack_webhook_url } = req.body
+  const { auto_mode, anthropic_api_key, admin_anthropic_api_key, infra_monthly_cost, ai_quota_eur_month_default, slack_webhook_url } = req.body
+
+  if (admin_anthropic_api_key !== undefined) {
+    if (admin_anthropic_api_key === '') {
+      await supabase.from('settings').delete().eq('key', 'admin_anthropic_api_key')
+    } else {
+      try {
+        const client = new Anthropic({ apiKey: admin_anthropic_api_key })
+        await client.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 1,
+          messages: [{ role: 'user', content: 'hi' }],
+        })
+      } catch {
+        return res.status(400).json({ error: 'Clé API Anthropic (rapports) invalide' })
+      }
+      await supabase.from('settings').upsert({ key: 'admin_anthropic_api_key', value: encrypt(admin_anthropic_api_key) })
+    }
+  }
 
   if (anthropic_api_key !== undefined) {
     try {

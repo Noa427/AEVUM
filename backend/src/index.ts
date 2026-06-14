@@ -39,6 +39,7 @@ import { simulateRouter } from './routes/simulate'
 import { supportRouter } from './routes/support'
 import { clientAuthRouter } from './routes/clientAuth'
 import { trackingRouter } from './routes/tracking'
+import { reportsRouter } from './routes/reports'
 import { errorHandler } from './middleware/error-handler'
 import { apiLimiter, webhookLimiter, simulateLimiter, portalLimiter, trackingLimiter } from './middleware/rate-limit'
 import {
@@ -50,6 +51,7 @@ import {
   runStudentCoaching,
   sendVideoReport,
   sendWeeklyReport,
+  sendBusinessReport,
 } from './cron'
 
 const app = express()
@@ -86,6 +88,7 @@ app.use('/api/settings', settingsRouter)
 app.use('/api/dashboard', dashboardRouter)
 app.use('/api/tasks', tasksRouter)
 app.use('/api/history', historyRouter)
+app.use('/api/reports', reportsRouter)
 app.use('/api/simulate', simulateLimiter, simulateRouter)
 app.use('/client', portalCors, portalLimiter, clientAuthRouter)
 app.use('/api/support', adminCors, apiLimiter, supportRouter)
@@ -104,6 +107,7 @@ app.listen(PORT, () => {
     runStudentCoaching()
     sendVideoReport()
     sendWeeklyReport()
+    sendBusinessReport()
     setInterval(runScheduledJobs,     60 * 60 * 1000)
     setInterval(runCustomAutomations, 60 * 60 * 1000)
     setInterval(runTestimonialEmails, 60 * 60 * 1000)
@@ -112,5 +116,6 @@ app.listen(PORT, () => {
     setInterval(runStudentCoaching,   60 * 60 * 1000)
     setInterval(sendVideoReport,      60 * 60 * 1000)
     setInterval(sendWeeklyReport,     60 * 60 * 1000)
+    setInterval(sendBusinessReport,   60 * 60 * 1000)
   }
 })

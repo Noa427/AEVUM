@@ -76,7 +76,8 @@ backend/src/
     supabase.ts             — client Supabase service role
     encryption.ts           — AES-256 encrypt/decrypt
     resend.ts               — sendEmail()
-    claude.ts               — callClaude(prompt, model?, clientId?) + callClaudeChat() — log tokens dans ai_usage_logs
+    claude.ts               — callClaude(prompt, model?, clientId?) + callClaudeChat() + callClaudeAdmin() (clé admin_anthropic_api_key) — log tokens dans ai_usage_logs
+    businessReport.ts       — generateBusinessReport(userId, adminEmail) : snapshot + IA + stockage business_reports + email
     templates.ts            — prompts IA + parseClaudeResponse + wrapEmailHtml
     whatsapp.ts             — sendWhatsApp() + validateWhatsApp() (F16)
     sms.ts                  — sendSms() via Twilio (F20)
@@ -97,6 +98,7 @@ backend/src/
     getEmailTemplate.ts     — cherche config DB puis fallback defaults
     tracking.ts             — insertTrackingRow + injectTracking (pixel + lien)
     sendMultiChannel.ts     — sendEmailWithChannels() — dispatch email + WhatsApp/SMS selon canaux actifs du client
+    businessMetrics.ts      — getBusinessSnapshot(userId) : MRR/coûts/profit/churn scopés user_id (pour rapports IA)
   schemas/
     client.ts               — schémas Zod + ALLOWED_CONFIG_TYPES (27 types : 23 piliers/templates + addon_f11/f13/f18 + vocal_ia_active)
 
@@ -109,6 +111,7 @@ frontend/
     (app)/clients/          — plan/addons/paiement inline + filtres/tri cumulatifs + MRR calculé
     (app)/clients/[id]/     — détail client (tâches / historique / paramètres)
     (app)/settings/         — clé API Anthropic + thème + coût infra mensuel
+    (app)/reports/          — rapports IA hebdo business (liste + détail + génération manuelle)
   components/
     sidebar.tsx             — navigation + logout
     client-form.tsx         — modale création/édition client
@@ -150,6 +153,9 @@ Vitrine (.env) :
 - POST      /api/tasks/:id/send            → valide + envoie email
 - GET       /api/dashboard                 → MRR, coûts IA/emails/infra, profit net, options, features Premium, coûts/client
 - GET       /api/history                   → logs paginés (?client_id&date_from&date_to&limit&offset)
+- GET       /api/reports                   → rapports business IA paginés (?page&limit)
+- GET       /api/reports/:id               → détail rapport business IA
+- POST      /api/reports/generate          → génère un rapport business IA immédiatement
 - POST      /api/simulate                  → tâche test (failed_payment | checkout_completed)
 - GET/PUT   /api/settings                  → clé API Anthropic + infra_monthly_cost
 - POST      /api/support/inbound           → email entrant → classify → réponse IA
@@ -219,6 +225,7 @@ Vitrine (.env) :
 | 027 | valid_config_type alignée sur ALLOWED_CONFIG_TYPES (27 types manquants depuis 006) + rejoue 026 (jamais appliquée) | Appliquée manuellement le 2026-06-14 via SQL Editor (hors tracking migrations) |
 | 028 | +ai_quota_eur_month (NULL = défaut global) sur clients | Appliquée manuellement le 2026-06-14 via SQL Editor (hors tracking migrations) |
 | 029 | valid_config_type + delay_onboarding_j3/j7, delay_failed_payment_j3/j7 | Appliquée manuellement le 2026-06-14 via SQL Editor (hors tracking migrations) |
+| 030 | Table business_reports (rapports IA hebdo, RLS activé) | À appliquer |
 
 ## MODÈLE D'ABONNEMENT
 
@@ -234,9 +241,7 @@ Stockage : `clients.plan` (standard/premium) + `clients.payment_status` (active/
 
 ## PROCHAINE FEATURE À CODER
 
-- Clé IA admin séparée (provider configurable) pour rapports AEVUM
 - Intégration Stripe côté admin pour paiement automatique clients
-- Rapports IA hebdo sur le business AEVUM (MRR, churn, anomalies)
 - Multi-tenant admin : plusieurs admins, isolation par user_id
 
 ## À FAIRE (dette technique signalée)
