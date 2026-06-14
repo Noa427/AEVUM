@@ -25,6 +25,8 @@ interface Client {
   student_count: number
   emails_sent_total: number
   ai_cost_eur_month: number
+  ai_quota_eur_month: number | null
+  ai_quota_eur_month_effective: number
   last_activity: string | null
 }
 
@@ -144,6 +146,10 @@ export default function ClientDetailPage() {
   const [savingWebhook, setSavingWebhook] = useState(false)
   const [copiedSettings, setCopiedSettings] = useState(false)
 
+  // Quota IA
+  const [aiQuotaInput, setAiQuotaInput] = useState('')
+  const [savingAiQuota, setSavingAiQuota] = useState(false)
+
   // Piliers save
   const [savingConfigs, setSavingConfigs] = useState(false)
 
@@ -154,6 +160,7 @@ export default function ClientDetailPage() {
     try {
       const data = await api.get<Client>(`/api/clients/${id}`)
       setClient(data)
+      setAiQuotaInput(data.ai_quota_eur_month !== null ? String(data.ai_quota_eur_month) : '')
     } catch {
       router.push('/clients')
     }
@@ -235,6 +242,22 @@ export default function ClientDetailPage() {
       toast.error(err.message || 'Erreur')
     } finally {
       setSavingWebhook(false)
+    }
+  }
+
+  async function saveAiQuota(rawValue?: string) {
+    const trimmed = (rawValue ?? aiQuotaInput).trim()
+    const value = trimmed === '' ? null : parseFloat(trimmed)
+    if (value !== null && (isNaN(value) || value < 0)) return
+    setSavingAiQuota(true)
+    try {
+      await api.put(`/api/clients/${id}`, { name: client!.name, email: client!.email, ai_quota_eur_month: value })
+      await loadClient()
+      toast.success('Quota IA enregistré')
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur')
+    } finally {
+      setSavingAiQuota(false)
     }
   }
 
@@ -577,6 +600,40 @@ export default function ClientDetailPage() {
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">Mode IA</p>
               <p className="text-sm font-medium">{client.auto_mode ? 'Automatique' : 'Manuel'}</p>
+            </div>
+          </div>
+
+          {/* Quota IA */}
+          <div className="card-elevated p-5 space-y-3">
+            <h3 className="text-sm font-semibold">Quota IA mensuel</h3>
+            <p className="text-xs text-muted-foreground">
+              Usage ce mois : <span className="font-medium text-foreground">{client.ai_cost_eur_month.toLocaleString('fr-FR')}€</span>
+              {' / '}
+              {client.ai_quota_eur_month_effective.toLocaleString('fr-FR')}€
+              {client.ai_quota_eur_month === null && ' (défaut global)'}
+            </p>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 max-w-[180px]">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  placeholder="défaut global"
+                  value={aiQuotaInput}
+                  onChange={e => setAiQuotaInput(e.target.value)}
+                  className="pr-8 text-sm"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">€</span>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => saveAiQuota()} disabled={savingAiQuota} className="gap-1.5">
+                {savingAiQuota && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Enregistrer
+              </Button>
+              {client.ai_quota_eur_month !== null && (
+                <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => { setAiQuotaInput(''); saveAiQuota('') }}>
+                  Réinitialiser
+                </Button>
+              )}
             </div>
           </div>
 

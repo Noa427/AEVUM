@@ -7,6 +7,7 @@ import { ClientUpdateSchema } from '../schemas/client'
 import { generateClientCredentials } from '../utils/generateClientCredentials'
 import { OPTION_ADDON_MAP, OptionKey } from '../middleware/planGate'
 import { USD_TO_EUR, planMrr, EXCLUDED_FROM_STATS_CLIENT_IDS } from '../utils/pricing'
+import { getAiQuotaDefault } from '../middleware/aiQuota'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const ADDON_CONFIG_TYPES = ['addon_f11', 'addon_f13', 'addon_f18'] as const
@@ -74,7 +75,7 @@ clientsRouter.get('/:id', async (req, res) => {
   if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID invalide' })
   const { data, error } = await supabase
     .from('clients')
-    .select('id, user_id, name, email, auto_mode, paused_until, whatsapp_phone_number_id, whatsapp_active, must_change_password, plan, payment_status, created_at')
+    .select('id, user_id, name, email, auto_mode, paused_until, whatsapp_phone_number_id, whatsapp_active, must_change_password, plan, payment_status, ai_quota_eur_month, created_at')
     .eq('id', req.params.id)
     .single()
   if (error || !data) return res.status(404).json({ error: 'Client introuvable' })
@@ -96,6 +97,7 @@ clientsRouter.get('/:id', async (req, res) => {
     try { if (decrypt(r.encrypted_value) === 'true') addons.add(r.config_type) } catch {}
   }
   const aiCostUsd = (aiRes.data ?? []).reduce((sum, r) => sum + r.cost_usd, 0)
+  const aiCostEurMonth = Math.round(aiCostUsd * USD_TO_EUR * 100) / 100
 
   res.json({
     ...data,
@@ -103,7 +105,8 @@ clientsRouter.get('/:id', async (req, res) => {
     mrr: planMrr(data.plan, addons),
     student_count: studentRes.count ?? 0,
     emails_sent_total: emailsRes.count ?? 0,
-    ai_cost_eur_month: Math.round(aiCostUsd * USD_TO_EUR * 100) / 100,
+    ai_cost_eur_month: aiCostEurMonth,
+    ai_quota_eur_month_effective: data.ai_quota_eur_month ?? (await getAiQuotaDefault()),
     last_activity: lastActivityRes.data?.created_at ?? null,
   })
 })
@@ -161,7 +164,7 @@ clientsRouter.post('/', async (req, res) => {
 clientsRouter.put('/:id', validate(ClientUpdateSchema), async (req, res) => {
   if (!UUID_RE.test(String(req.params.id))) return res.status(400).json({ error: 'ID invalide' })
   const userId = (req as any).userId
-  const { name, email, stripe_webhook_secret, sender_name, auto_mode, plan, payment_status } = req.body
+  const { name, email, stripe_webhook_secret, sender_name, auto_mode, plan, payment_status, ai_quota_eur_month } = req.body
 
   const update: Record<string, any> = {}
   if (typeof name !== 'undefined') update.name = name
@@ -169,6 +172,7 @@ clientsRouter.put('/:id', validate(ClientUpdateSchema), async (req, res) => {
   if (typeof auto_mode !== 'undefined') update.auto_mode = auto_mode
   if (typeof plan !== 'undefined') update.plan = plan
   if (typeof payment_status !== 'undefined') update.payment_status = payment_status
+  if (typeof ai_quota_eur_month !== 'undefined') update.ai_quota_eur_month = ai_quota_eur_month
 
   if (Object.keys(update).length === 0 && typeof stripe_webhook_secret === 'undefined' && typeof sender_name === 'undefined') {
     return res.status(400).json({ error: 'Aucun champ à mettre à jour' })

@@ -51,6 +51,7 @@
 - Plan gating backend 2026-06-08 : middleware planGate.ts (checkGate/planGate → 403 PLAN_REQUIRED|OPTION_REQUIRED), options option_checkout/option_vocal/option_notaire exposées comme alias de addon_f11/f13/f18 (lecture/écriture via client_configs, pas de nouvelles colonnes), gates posés sur POST /client/vocal/send (option_vocal) et PUT /client/configs pour rapport_video_active (plan premium), routes admin POST /api/clients + PUT /api/clients/:id/plan (gestion plan/options + log activity_logs 'plan_updated'). Sur `feat/plan-gating-backend`
 - Dette technique 2026-06-13 : validation Zod (ClientUpdateSchema) sur PUT /api/clients/:id pour sender_name/stripe_webhook_secret (champ absent vs vide) (110c6d1) ; gate vocal_ia_active sur addon_f13/option_vocal dans PUT /client/configs (3a2bea6)
 - client_configs multi-formation 2026-06-13 : migration 026 (formation_key généré + UNIQUE (client_id, config_type, formation_key)) — les configs template_* sont désormais par formation, le reste reste global (formation_id NULL). GET/PUT /client/configs et getEmailTemplate adaptés (254cd2a, 0d94f7a, ab2a593, 7cdff25)
+- Quota IA mensuel 2026-06-14 : migration 028 (clients.ai_quota_eur_month, NULL = défaut global settings.ai_quota_eur_month_default, 5€ par défaut) ; middleware aiQuotaGate (utils/pricing EXCLUDED_FROM_STATS_CLIENT_IDS exempté) posé sur POST /client/ai/generate et /ai/improve → 429 AI_QUOTA_EXCEEDED si usage du mois (ai_usage_logs) ≥ quota ; réglage global via GET/PUT /api/settings (ai_quota_eur_month_default), override par client via GET/PUT /api/clients/:id (ai_quota_eur_month, ai_quota_eur_month_effective) + UI fiche client (onglet Paramètres)
 
 ## STRUCTURE DES FICHIERS
 
@@ -170,8 +171,8 @@ Vitrine (.env) :
 - GET       /client/history                → logs paginés (?limit&offset)
 - GET       /client/stats                  → compteurs + tracking 30j + taux recouvrement
 - GET/PUT   /client/configs                → configs déchiffrées / upsert (19 types)
-- POST      /client/ai/generate            → générer email IA (aiLimiter 10/min)
-- POST      /client/ai/improve             → améliorer email IA (aiLimiter 10/min)
+- POST      /client/ai/generate            → générer email IA (aiLimiter 10/min + aiQuotaGate, 429 AI_QUOTA_EXCEEDED)
+- POST      /client/ai/improve             → améliorer email IA (aiLimiter 10/min + aiQuotaGate, 429 AI_QUOTA_EXCEEDED)
 - POST      /client/test-send             → envoi email test à soi-même
 - POST/DELETE /client/pause               → pause automations N jours / reprendre
 - GET/POST  /client/blacklist              → liste / ajouter email blacklisté
@@ -213,6 +214,7 @@ Vitrine (.env) :
 | 025 | RLS activé sur tables sans policy (service_role bypass) | Appliquée |
 | 026 | client_configs.formation_key (généré) + UNIQUE (client_id, config_type, formation_key) | Appliquée |
 | 027 | valid_config_type alignée sur ALLOWED_CONFIG_TYPES (27 types manquants depuis 006) + rejoue 026 (jamais appliquée) | Appliquée manuellement le 2026-06-14 via SQL Editor (hors tracking migrations) |
+| 028 | +ai_quota_eur_month (NULL = défaut global) sur clients | Appliquée manuellement le 2026-06-14 via SQL Editor (hors tracking migrations) |
 
 ## MODÈLE D'ABONNEMENT
 
@@ -228,7 +230,6 @@ Stockage : `clients.plan` (standard/premium) + `clients.payment_status` (active/
 
 ## PROCHAINE FEATURE À CODER
 
-- Limites d'usage IA par client (quota mensuel) — avant lancement AEVUM
 - Clé IA admin séparée (provider configurable) pour rapports AEVUM
 - Intégration Stripe côté admin pour paiement automatique clients
 - Rapports IA hebdo sur le business AEVUM (MRR, churn, anomalies)

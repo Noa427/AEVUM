@@ -70,6 +70,7 @@ export const ClientUpdateSchema = z.object({
   auto_mode: z.boolean().optional(),
   plan: z.enum(['standard', 'premium']).optional(),
   payment_status: z.enum(['active', 'unpaid']).optional(),
+  ai_quota_eur_month: z.number().min(0).nullable().optional(),
 })
 
 export const AutomationSchema = z.object({

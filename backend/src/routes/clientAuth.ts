@@ -6,6 +6,7 @@ import { supabase } from '../services/supabase'
 import { encrypt, decrypt } from '../services/encryption'
 import { authenticateClient } from '../middleware/authenticateClient'
 import { planGate, checkGate, getClientOptions } from '../middleware/planGate'
+import { aiQuotaGate } from '../middleware/aiQuota'
 import { loginLimiter, aiLimiter, forgotPasswordLimiter, portalLimiter } from '../middleware/rate-limit'
 import { validate } from '../middleware/validate'
 import { callClaudeChat } from '../services/claude'
@@ -521,7 +522,7 @@ function sanitizeAiInput(text: string | undefined, clientId: string): string | u
 }
 
 // POST /client/ai/generate
-clientAuthRouter.post('/ai/generate', authenticateClient, aiLimiter, validate(AiGenerateSchema), async (req, res) => {
+clientAuthRouter.post('/ai/generate', authenticateClient, aiLimiter, aiQuotaGate, validate(AiGenerateSchema), async (req, res) => {
   const { emailType } = req.body
   const clientId = (req as any).clientId as string
   const formationName = sanitizeAiInput(req.body.formationName, clientId)
@@ -545,7 +546,7 @@ clientAuthRouter.post('/ai/generate', authenticateClient, aiLimiter, validate(Ai
 })
 
 // POST /client/ai/improve
-clientAuthRouter.post('/ai/improve', authenticateClient, aiLimiter, validate(AiImproveSchema), async (req, res) => {
+clientAuthRouter.post('/ai/improve', authenticateClient, aiLimiter, aiQuotaGate, validate(AiImproveSchema), async (req, res) => {
   const { emailType } = req.body
   const clientId = (req as any).clientId as string
   const content = sanitizeAiInput(req.body.content, clientId)

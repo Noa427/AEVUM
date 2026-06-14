@@ -11,10 +11,11 @@ interface SettingsData {
   auto_mode: boolean
   has_api_key: boolean
   infra_monthly_cost: number
+  ai_quota_eur_month_default: number
 }
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<SettingsData>({ auto_mode: false, has_api_key: false, infra_monthly_cost: 0 })
+  const [settings, setSettings] = useState<SettingsData>({ auto_mode: false, has_api_key: false, infra_monthly_cost: 0, ai_quota_eur_month_default: 5 })
   const [apiKey, setApiKey] = useState('')
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -22,12 +23,15 @@ export default function SettingsPage() {
   const [showKey, setShowKey] = useState(false)
   const [infraCost, setInfraCost] = useState('')
   const [savingInfra, setSavingInfra] = useState(false)
+  const [aiQuotaDefault, setAiQuotaDefault] = useState('')
+  const [savingAiQuota, setSavingAiQuota] = useState(false)
   const { theme, setTheme } = useTheme()
 
   useEffect(() => {
     api.get<SettingsData>('/api/settings').then(s => {
       setSettings(s)
       setInfraCost(s.infra_monthly_cost > 0 ? String(s.infra_monthly_cost) : '')
+      setAiQuotaDefault(String(s.ai_quota_eur_month_default))
     })
   }, [])
 
@@ -72,6 +76,21 @@ export default function SettingsPage() {
       toast.error(err.message || 'Erreur')
     } finally {
       setSavingInfra(false)
+    }
+  }
+
+  async function saveAiQuotaDefault() {
+    const val = parseFloat(aiQuotaDefault)
+    if (isNaN(val) || val < 0) return
+    setSavingAiQuota(true)
+    try {
+      await api.put('/api/settings', { ai_quota_eur_month_default: val })
+      setSettings(s => ({ ...s, ai_quota_eur_month_default: val }))
+      toast.success('Quota IA par défaut enregistré')
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur')
+    } finally {
+      setSavingAiQuota(false)
     }
   }
 
@@ -291,6 +310,40 @@ export default function SettingsPage() {
               </div>
               <Button onClick={saveInfraCost} disabled={savingInfra || !infraCost} variant="outline" className="flex-shrink-0">
                 {savingInfra ? 'Enregistrement…' : 'Sauvegarder'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Quota IA mensuel par défaut ─────────────────────────── */}
+      <div className={sectionClass}>
+        <div className="flex items-start gap-3">
+          <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <svg className="w-4 h-4 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-sm font-semibold">Quota IA mensuel par défaut</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Plafond de coût IA par client et par mois, appliqué sauf override sur la fiche client.
+            </p>
+            <div className="flex gap-2 mt-3">
+              <div className="relative flex-1">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  placeholder="ex: 5"
+                  value={aiQuotaDefault}
+                  onChange={e => setAiQuotaDefault(e.target.value)}
+                  className="pr-8"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">€</span>
+              </div>
+              <Button onClick={saveAiQuotaDefault} disabled={savingAiQuota || !aiQuotaDefault} variant="outline" className="flex-shrink-0">
+                {savingAiQuota ? 'Enregistrement…' : 'Sauvegarder'}
               </Button>
             </div>
           </div>

@@ -3,6 +3,7 @@ import { supabase } from '../services/supabase'
 import { requireAuth } from '../middleware/auth'
 import Anthropic from '@anthropic-ai/sdk'
 import { encrypt, decrypt } from '../services/encryption'
+import { DEFAULT_AI_QUOTA_EUR_MONTH } from '../middleware/aiQuota'
 
 export const settingsRouter = Router()
 settingsRouter.use(requireAuth)
@@ -15,6 +16,10 @@ settingsRouter.get('/', async (_req, res) => {
     auto_mode: map['auto_mode'] === 'true',
     has_api_key: !!map['anthropic_api_key'],
     infra_monthly_cost: parseFloat(map['infra_monthly_cost'] ?? '0') || 0,
+    ai_quota_eur_month_default: (() => {
+      const v = parseFloat(map['ai_quota_eur_month_default'] ?? '')
+      return isNaN(v) ? DEFAULT_AI_QUOTA_EUR_MONTH : v
+    })(),
   })
 })
 
@@ -36,7 +41,7 @@ settingsRouter.get('/test-anthropic', async (_req, res) => {
 })
 
 settingsRouter.put('/', async (req, res) => {
-  const { auto_mode, anthropic_api_key, infra_monthly_cost } = req.body
+  const { auto_mode, anthropic_api_key, infra_monthly_cost, ai_quota_eur_month_default } = req.body
 
   if (anthropic_api_key !== undefined) {
     try {
@@ -64,6 +69,12 @@ settingsRouter.put('/', async (req, res) => {
     const val = parseFloat(String(infra_monthly_cost))
     if (isNaN(val) || val < 0) return res.status(400).json({ error: 'Coût infra invalide' })
     await supabase.from('settings').upsert({ key: 'infra_monthly_cost', value: String(val) })
+  }
+
+  if (ai_quota_eur_month_default !== undefined) {
+    const val = parseFloat(String(ai_quota_eur_month_default))
+    if (isNaN(val) || val < 0) return res.status(400).json({ error: 'Quota IA invalide' })
+    await supabase.from('settings').upsert({ key: 'ai_quota_eur_month_default', value: String(val) })
   }
 
   res.json({ ok: true })
