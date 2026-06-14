@@ -1,13 +1,14 @@
 'use client'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Users, Settings, LogOut, Zap, X } from 'lucide-react'
+import { LayoutDashboard, Users, ListChecks, Settings, LogOut, Zap, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 
 const links = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/clients', label: 'Clients', icon: Users },
+  { href: '/tasks', label: 'Tâches', icon: ListChecks },
   { href: '/settings', label: 'Paramètres', icon: Settings },
 ]
 

@@ -92,6 +92,8 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [logs, setLogs] = useState<LogRow[]>([])
   const [loadingLogs, setLoadingLogs] = useState(true)
+  const [failedLogs, setFailedLogs] = useState<LogRow[]>([])
+  const [loadingFailed, setLoadingFailed] = useState(true)
 
   useEffect(() => {
     api.get<DashboardData>('/api/dashboard').then(setData).catch(console.error)
@@ -99,6 +101,10 @@ export default function DashboardPage() {
       .then(r => setLogs(r.data ?? []))
       .catch(() => {})
       .finally(() => setLoadingLogs(false))
+    api.get<{ data: LogRow[] }>('/api/history?limit=5&status=failed')
+      .then(r => setFailedLogs(r.data ?? []))
+      .catch(() => {})
+      .finally(() => setLoadingFailed(false))
   }, [])
 
   if (!data) return (
@@ -329,6 +335,39 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Échecs récents */}
+      {!loadingFailed && failedLogs.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Échecs récents</h2>
+            <Link href="/tasks" className="text-xs text-primary hover:underline flex items-center gap-1">
+              Voir les tâches <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+          <div className="border border-red-500/30 rounded-lg overflow-hidden divide-y divide-border/60 bg-card/40">
+            {failedLogs.map(log => (
+              <div key={log.id} className="flex items-center justify-between px-4 py-2.5">
+                <div className="min-w-0">
+                  {log.clients?.name && (
+                    <Link href={`/clients/${log.client_id}`} className="text-sm font-semibold hover:text-primary transition-colors">
+                      {log.clients.name}
+                    </Link>
+                  )}
+                  <p className="text-xs text-muted-foreground truncate">
+                    {ACTION_LABELS[log.action_type] ?? log.action_type}
+                    {log.payload_json?.to && ` · ${log.payload_json.to}`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                  <span className="text-xs text-muted-foreground">{relTime(log.created_at)}</span>
+                  <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium badge-failed">échoué</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Activité récente */}
       <section className="space-y-3">
