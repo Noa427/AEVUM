@@ -238,5 +238,6 @@ Stockage : `clients.plan` (standard/premium) + `clients.payment_status` (active/
 
 ## À FAIRE (dette technique signalée)
 
-- `sendVideoReport` et `sendWeeklyReport` ont la même fenêtre lundi 08h UTC — deux reports lourds en simultané
-- `/client/automations` retourne `recouvrement: true` si stripe_webhook_secret présent — indicateur peu fiable
+- `sendVideoReport` et `sendWeeklyReport` ont la même fenêtre lundi 08h UTC — deux reports lourds en simultané (corrigé : sendVideoReport décalé à 9h UTC, cron.ts)
+- `/client/automations` retourne `recouvrement: true` si stripe_webhook_secret présent — indicateur peu fiable (corrigé : reflète template_failed_payment_j1 configuré, clientAuth.ts)
+- Audit sécurité 2026-06-14 : IDOR multi-tenant — le filtrage `user_id` n'est appliqué que sur les écritures `clients` (PUT/DELETE/plan). Lectures et tables liées non scopées : `clients.ts` (`GET /:id`, `GET /:id/configs`), `tasks.ts` (`GET /`, `POST /:id/preview`, `POST /:id/send`), `history.ts` (`GET /`), `dashboard.ts` (agrégation globale), `support.ts` (`POST /inbound`, client_id du body sans vérif propriétaire), `simulate.ts`. Sans impact tant qu'il n'y a qu'un seul admin — à traiter avec le chantier roadmap "Multi-tenant admin : plusieurs admins, isolation par user_id"
