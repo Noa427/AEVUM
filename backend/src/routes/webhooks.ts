@@ -9,6 +9,13 @@ import { verifyStripeSignature } from '../middleware/stripe-sig'
 import { getEmailTemplate, templateToAiResponse } from '../utils/getEmailTemplate'
 import { insertTrackingRow, injectTracking } from '../utils/tracking'
 import { sendEmailWithChannels } from '../utils/sendMultiChannel'
+import { DEFAULT_DELAYS } from '../schemas/client'
+
+function getDelayDays(configMap: Record<string, string>, key: keyof typeof DEFAULT_DELAYS): number {
+  const raw = configMap[key]
+  const days = raw ? Number(raw) : NaN
+  return Number.isInteger(days) && days > 0 ? days : DEFAULT_DELAYS[key]
+}
 
 export const webhooksRouter = Router()
 
@@ -140,8 +147,8 @@ async function handleFailedPayment(opts: {
   }
 
   const now = new Date()
-  const j3At = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000)
-  const j7At = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+  const j3At = new Date(now.getTime() + getDelayDays(configMap, 'delay_failed_payment_j3') * 24 * 60 * 60 * 1000)
+  const j7At = new Date(now.getTime() + getDelayDays(configMap, 'delay_failed_payment_j7') * 24 * 60 * 60 * 1000)
 
   if (!isAuto) {
     const tpl = await getEmailTemplate(clientId, 'template_failed_payment_j1', tplVars)
@@ -268,8 +275,8 @@ async function handleCheckoutCompleted(opts: {
   }
 
   const now = new Date()
-  const j3At  = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000)
-  const j7At  = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+  const j3At  = new Date(now.getTime() + getDelayDays(configMap, 'delay_onboarding_j3') * 24 * 60 * 60 * 1000)
+  const j7At  = new Date(now.getTime() + getDelayDays(configMap, 'delay_onboarding_j7') * 24 * 60 * 60 * 1000)
   const j30At = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
   const followupJobs = [
     { client_id: clientId, job_type: 'onboarding_j3', context_json, scheduled_for: j3At.toISOString(),  status: 'pending' },

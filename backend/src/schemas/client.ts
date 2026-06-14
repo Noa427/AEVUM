@@ -28,7 +28,25 @@ export const ALLOWED_CONFIG_TYPES = [
   'addon_f13',
   'addon_f18',
   'vocal_ia_active',
+  'delay_onboarding_j3',
+  'delay_onboarding_j7',
+  'delay_failed_payment_j3',
+  'delay_failed_payment_j7',
 ] as const
+
+export const DELAY_CONFIG_TYPES = [
+  'delay_onboarding_j3',
+  'delay_onboarding_j7',
+  'delay_failed_payment_j3',
+  'delay_failed_payment_j7',
+] as const
+
+export const DEFAULT_DELAYS: Record<typeof DELAY_CONFIG_TYPES[number], number> = {
+  delay_onboarding_j3: 3,
+  delay_onboarding_j7: 7,
+  delay_failed_payment_j3: 3,
+  delay_failed_payment_j7: 7,
+}
 
 export const VALID_TRIGGER_TYPES = ['delay_after_purchase', 'specific_date', 'payment_failed', 'manual'] as const
 export const VALID_EMAIL_TYPES = ['onboarding_j0', 'onboarding_j3', 'onboarding_j7', 'failed_payment', 'failed_payment_j1', 'failed_payment_j3', 'failed_payment_j7', 'custom_automation'] as const

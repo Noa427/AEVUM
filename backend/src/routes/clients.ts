@@ -3,7 +3,7 @@ import { supabase } from '../services/supabase'
 import { encrypt, decrypt } from '../services/encryption'
 import { requireAuth } from '../middleware/auth'
 import { validate } from '../middleware/validate'
-import { ClientUpdateSchema } from '../schemas/client'
+import { ClientUpdateSchema, DELAY_CONFIG_TYPES } from '../schemas/client'
 import { generateClientCredentials } from '../utils/generateClientCredentials'
 import { OPTION_ADDON_MAP, OptionKey } from '../middleware/planGate'
 import { USD_TO_EUR, planMrr, EXCLUDED_FROM_STATS_CLIENT_IDS } from '../utils/pricing'
@@ -308,7 +308,7 @@ clientsRouter.get('/:id/configs', async (req, res) => {
     .single()
   if (!client) return res.status(404).json({ error: 'Client introuvable' })
 
-  const ALL_CONFIG_TYPES = [...PILIER_CONFIG_TYPES, ...ADDON_CONFIG_TYPES] as const
+  const ALL_CONFIG_TYPES = [...PILIER_CONFIG_TYPES, ...ADDON_CONFIG_TYPES, ...DELAY_CONFIG_TYPES] as const
 
   const { data: rows } = await supabase
     .from('client_configs')
@@ -334,12 +334,18 @@ clientsRouter.put('/:id/configs', async (req, res) => {
     .single()
   if (!client) return res.status(404).json({ error: 'Client introuvable' })
 
-  const ALL_WRITABLE_TYPES = [...PILIER_CONFIG_TYPES, ...ADDON_CONFIG_TYPES] as const
+  const ALL_WRITABLE_TYPES = [...PILIER_CONFIG_TYPES, ...ADDON_CONFIG_TYPES, ...DELAY_CONFIG_TYPES] as const
   const upserts: Array<{ client_id: string; config_type: string; encrypted_value: string }> = []
   for (const key of ALL_WRITABLE_TYPES) {
     if (!(key in req.body)) continue
     const val = req.body[key]
     if (typeof val !== 'string' && typeof val !== 'boolean') continue
+    if ((DELAY_CONFIG_TYPES as readonly string[]).includes(key) && val !== '') {
+      const days = Number(val)
+      if (!Number.isInteger(days) || days < 1 || days > 90) {
+        return res.status(400).json({ error: `${key} doit être un nombre de jours entre 1 et 90` })
+      }
+    }
     upserts.push({ client_id: req.params.id, config_type: key, encrypted_value: encrypt(String(val)) })
   }
 

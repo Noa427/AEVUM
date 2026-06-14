@@ -58,6 +58,10 @@ interface PilierConfigs {
   addon_f11: string
   addon_f13: string
   addon_f18: string
+  delay_onboarding_j3: string
+  delay_onboarding_j7: string
+  delay_failed_payment_j3: string
+  delay_failed_payment_j7: string
 }
 
 type Tab = 'tasks' | 'history' | 'settings'
@@ -601,6 +605,74 @@ export default function ClientDetailPage() {
               <p className="text-xs text-muted-foreground mb-0.5">Mode IA</p>
               <p className="text-sm font-medium">{client.auto_mode ? 'Automatique' : 'Manuel'}</p>
             </div>
+          </div>
+
+          {/* Délais J3/J7 */}
+          <div className="card-elevated p-5 space-y-4">
+            <h3 className="text-sm font-semibold">Délais de relance</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1.5">Onboarding J+3</p>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    min="1"
+                    max="90"
+                    placeholder="3"
+                    value={configs.delay_onboarding_j3 ?? ''}
+                    onChange={e => setConfig('delay_onboarding_j3', e.target.value)}
+                    className="pr-12 text-sm"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">jours</span>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1.5">Onboarding J+7</p>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    min="1"
+                    max="90"
+                    placeholder="7"
+                    value={configs.delay_onboarding_j7 ?? ''}
+                    onChange={e => setConfig('delay_onboarding_j7', e.target.value)}
+                    className="pr-12 text-sm"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">jours</span>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1.5">Relance impayé J+3</p>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    min="1"
+                    max="90"
+                    placeholder="3"
+                    value={configs.delay_failed_payment_j3 ?? ''}
+                    onChange={e => setConfig('delay_failed_payment_j3', e.target.value)}
+                    className="pr-12 text-sm"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">jours</span>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1.5">Relance impayé J+7</p>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    min="1"
+                    max="90"
+                    placeholder="7"
+                    value={configs.delay_failed_payment_j7 ?? ''}
+                    onChange={e => setConfig('delay_failed_payment_j7', e.target.value)}
+                    className="pr-12 text-sm"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">jours</span>
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">Laisser vide pour utiliser le délai par défaut (3 / 7 jours).</p>
           </div>
 
           {/* Quota IA */}

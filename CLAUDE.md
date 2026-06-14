@@ -52,6 +52,7 @@
 - Dette technique 2026-06-13 : validation Zod (ClientUpdateSchema) sur PUT /api/clients/:id pour sender_name/stripe_webhook_secret (champ absent vs vide) (110c6d1) ; gate vocal_ia_active sur addon_f13/option_vocal dans PUT /client/configs (3a2bea6)
 - client_configs multi-formation 2026-06-13 : migration 026 (formation_key généré + UNIQUE (client_id, config_type, formation_key)) — les configs template_* sont désormais par formation, le reste reste global (formation_id NULL). GET/PUT /client/configs et getEmailTemplate adaptés (254cd2a, 0d94f7a, ab2a593, 7cdff25)
 - Quota IA mensuel 2026-06-14 : migration 028 (clients.ai_quota_eur_month, NULL = défaut global settings.ai_quota_eur_month_default, 5€ par défaut) ; middleware aiQuotaGate (utils/pricing EXCLUDED_FROM_STATS_CLIENT_IDS exempté) posé sur POST /client/ai/generate et /ai/improve → 429 AI_QUOTA_EXCEEDED si usage du mois (ai_usage_logs) ≥ quota ; réglage global via GET/PUT /api/settings (ai_quota_eur_month_default), override par client via GET/PUT /api/clients/:id (ai_quota_eur_month, ai_quota_eur_month_effective) + UI fiche client (onglet Paramètres)
+- Délais J3/J7 configurables par client 2026-06-14 : migration 029 (4 nouveaux config_types : delay_onboarding_j3/j7, delay_failed_payment_j3/j7, valeur = nombre de jours en string, vide = défaut 3/7) ; webhooks.ts calcule j3At/j7At via getDelayDays(configMap, ...) avec fallback DEFAULT_DELAYS (schemas/client.ts) pour handleCheckoutCompleted (onboarding) et handleFailedPayment (relance impayé) ; admin GET/PUT /api/clients/:id/configs accepte ces 4 types (validation 1-90 jours) + UI fiche client (onglet Paramètres, carte "Délais de relance")
 
 ## STRUCTURE DES FICHIERS
 
@@ -215,6 +216,7 @@ Vitrine (.env) :
 | 026 | client_configs.formation_key (généré) + UNIQUE (client_id, config_type, formation_key) | Appliquée |
 | 027 | valid_config_type alignée sur ALLOWED_CONFIG_TYPES (27 types manquants depuis 006) + rejoue 026 (jamais appliquée) | Appliquée manuellement le 2026-06-14 via SQL Editor (hors tracking migrations) |
 | 028 | +ai_quota_eur_month (NULL = défaut global) sur clients | Appliquée manuellement le 2026-06-14 via SQL Editor (hors tracking migrations) |
+| 029 | valid_config_type + delay_onboarding_j3/j7, delay_failed_payment_j3/j7 | À appliquer |
 
 ## MODÈLE D'ABONNEMENT
 
@@ -235,7 +237,6 @@ Stockage : `clients.plan` (standard/premium) + `clients.payment_status` (active/
 - Rapports IA hebdo sur le business AEVUM (MRR, churn, anomalies)
 - Multi-tenant admin : plusieurs admins, isolation par user_id
 - Notifications push/Slack sur nouveau webhook reçu
-- Interface de configuration des délais J3/J7 par client
 
 ## À FAIRE (dette technique signalée)
 
