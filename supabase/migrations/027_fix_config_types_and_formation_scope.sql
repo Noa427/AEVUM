@@ -1,3 +1,7 @@
+-- NOTE 2026-06-14 : appliquée manuellement sur la base distante via le SQL Editor
+-- Supabase (hors tracking supabase/migrations) — ne pas la rejouer en pensant
+-- qu'elle est manquante.
+--
 -- Corrige deux dérives détectées entre le code et la base distante :
 -- 1) valid_config_type n'avait pas été mis à jour depuis la migration 006 (27 types
 --    manquants : addons F11/F13/F18, vocal_ia_active, templates J1/J3/J7, etc.)

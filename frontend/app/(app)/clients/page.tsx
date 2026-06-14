@@ -17,6 +17,7 @@ interface ClientRow {
   payment_status: 'active' | 'unpaid'
   addons: string[]
   has_issue: boolean
+  excluded_from_stats?: boolean
 }
 
 const MRR = { standard: 690, premium: 1290, addon_f11: 200, addon_f13: 350, addon_f18: 149 }
@@ -150,7 +151,7 @@ export default function ClientsPage() {
     return result
   }, [clients, search, filterPlan, filterPayment, filterAddon, sortBy])
 
-  const totalMrr = clients.reduce((a, c) => a + calcMrr(c.plan, c.addons), 0)
+  const totalMrr = clients.filter(c => !c.excluded_from_stats).reduce((a, c) => a + calcMrr(c.plan, c.addons), 0)
   const selectCls = "rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50 transition-shadow"
 
   return (

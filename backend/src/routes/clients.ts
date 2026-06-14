@@ -6,7 +6,7 @@ import { validate } from '../middleware/validate'
 import { ClientUpdateSchema } from '../schemas/client'
 import { generateClientCredentials } from '../utils/generateClientCredentials'
 import { OPTION_ADDON_MAP, OptionKey } from '../middleware/planGate'
-import { USD_TO_EUR, planMrr } from '../utils/pricing'
+import { USD_TO_EUR, planMrr, EXCLUDED_FROM_STATS_CLIENT_IDS } from '../utils/pricing'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const ADDON_CONFIG_TYPES = ['addon_f11', 'addon_f13', 'addon_f18'] as const
@@ -66,6 +66,7 @@ clientsRouter.get('/', async (_req, res) => {
     emails_sent: logCounts[c.id] ?? 0,
     addons: addonsMap[c.id] ?? [],
     has_issue: c.payment_status === 'unpaid' || failedTaskClients.has(c.id),
+    excluded_from_stats: EXCLUDED_FROM_STATS_CLIENT_IDS.has(c.id),
   })))
 })
 

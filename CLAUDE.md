@@ -212,6 +212,7 @@ Vitrine (.env) :
 | 024 | +password_reset_used_at sur clients | Appliquée |
 | 025 | RLS activé sur tables sans policy (service_role bypass) | Appliquée |
 | 026 | client_configs.formation_key (généré) + UNIQUE (client_id, config_type, formation_key) | Appliquée |
+| 027 | valid_config_type alignée sur ALLOWED_CONFIG_TYPES (27 types manquants depuis 006) + rejoue 026 (jamais appliquée) | Appliquée manuellement le 2026-06-14 via SQL Editor (hors tracking migrations) |
 
 ## MODÈLE D'ABONNEMENT
 
