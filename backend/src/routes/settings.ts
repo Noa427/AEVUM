@@ -20,6 +20,7 @@ settingsRouter.get('/', async (_req, res) => {
       const v = parseFloat(map['ai_quota_eur_month_default'] ?? '')
       return isNaN(v) ? DEFAULT_AI_QUOTA_EUR_MONTH : v
     })(),
+    has_slack_webhook: !!map['slack_webhook_url'],
   })
 })
 
@@ -41,7 +42,7 @@ settingsRouter.get('/test-anthropic', async (_req, res) => {
 })
 
 settingsRouter.put('/', async (req, res) => {
-  const { auto_mode, anthropic_api_key, infra_monthly_cost, ai_quota_eur_month_default } = req.body
+  const { auto_mode, anthropic_api_key, infra_monthly_cost, ai_quota_eur_month_default, slack_webhook_url } = req.body
 
   if (anthropic_api_key !== undefined) {
     try {
@@ -75,6 +76,17 @@ settingsRouter.put('/', async (req, res) => {
     const val = parseFloat(String(ai_quota_eur_month_default))
     if (isNaN(val) || val < 0) return res.status(400).json({ error: 'Quota IA invalide' })
     await supabase.from('settings').upsert({ key: 'ai_quota_eur_month_default', value: String(val) })
+  }
+
+  if (slack_webhook_url !== undefined) {
+    if (slack_webhook_url === '') {
+      await supabase.from('settings').delete().eq('key', 'slack_webhook_url')
+    } else {
+      if (typeof slack_webhook_url !== 'string' || !slack_webhook_url.startsWith('https://hooks.slack.com/')) {
+        return res.status(400).json({ error: 'URL Slack invalide (doit commencer par https://hooks.slack.com/)' })
+      }
+      await supabase.from('settings').upsert({ key: 'slack_webhook_url', value: encrypt(slack_webhook_url) })
+    }
   }
 
   res.json({ ok: true })

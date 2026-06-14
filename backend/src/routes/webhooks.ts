@@ -9,12 +9,39 @@ import { verifyStripeSignature } from '../middleware/stripe-sig'
 import { getEmailTemplate, templateToAiResponse } from '../utils/getEmailTemplate'
 import { insertTrackingRow, injectTracking } from '../utils/tracking'
 import { sendEmailWithChannels } from '../utils/sendMultiChannel'
+import { sendSlackNotification } from '../services/slack'
 import { DEFAULT_DELAYS } from '../schemas/client'
 
 function getDelayDays(configMap: Record<string, string>, key: keyof typeof DEFAULT_DELAYS): number {
   const raw = configMap[key]
   const days = raw ? Number(raw) : NaN
   return Number.isInteger(days) && days > 0 ? days : DEFAULT_DELAYS[key]
+}
+
+function notifySlack(event: any, clientName: string): void {
+  const obj = event.data?.object as any
+  let text: string | null = null
+
+  switch (event.type) {
+    case 'checkout.session.completed': {
+      const amount = ((obj?.amount_total ?? 0) / 100).toFixed(2)
+      text = `✅ Nouvelle vente — ${clientName} (${amount}€)`
+      break
+    }
+    case 'checkout.session.expired': {
+      text = `🛒 Abandon de panier — ${clientName}`
+      break
+    }
+    case 'payment_intent.payment_failed':
+    case 'invoice.payment_failed': {
+      const raw = event.type === 'invoice.payment_failed' ? obj?.amount_due : obj?.amount
+      const amount = ((raw ?? 0) / 100).toFixed(2)
+      text = `⚠️ Paiement échoué — ${clientName} (${amount}€)`
+      break
+    }
+  }
+
+  if (text) sendSlackNotification(text).catch(() => {})
 }
 
 export const webhooksRouter = Router()
@@ -46,9 +73,11 @@ webhooksRouter.post('/:clientId', verifyStripeSignature, async (req, res) => {
 
   const { data: client } = await supabase
     .from('clients')
-    .select('email, auto_mode, paused_until')
+    .select('name, email, auto_mode, paused_until')
     .eq('id', clientId)
     .single()
+
+  notifySlack(event, (client as any)?.name ?? 'Client')
 
   const { data: configs } = await supabase
     .from('client_configs')

@@ -12,10 +12,11 @@ interface SettingsData {
   has_api_key: boolean
   infra_monthly_cost: number
   ai_quota_eur_month_default: number
+  has_slack_webhook: boolean
 }
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<SettingsData>({ auto_mode: false, has_api_key: false, infra_monthly_cost: 0, ai_quota_eur_month_default: 5 })
+  const [settings, setSettings] = useState<SettingsData>({ auto_mode: false, has_api_key: false, infra_monthly_cost: 0, ai_quota_eur_month_default: 5, has_slack_webhook: false })
   const [apiKey, setApiKey] = useState('')
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -25,6 +26,8 @@ export default function SettingsPage() {
   const [savingInfra, setSavingInfra] = useState(false)
   const [aiQuotaDefault, setAiQuotaDefault] = useState('')
   const [savingAiQuota, setSavingAiQuota] = useState(false)
+  const [slackWebhookUrl, setSlackWebhookUrl] = useState('')
+  const [savingSlack, setSavingSlack] = useState(false)
   const { theme, setTheme } = useTheme()
 
   useEffect(() => {
@@ -91,6 +94,34 @@ export default function SettingsPage() {
       toast.error(err.message || 'Erreur')
     } finally {
       setSavingAiQuota(false)
+    }
+  }
+
+  async function saveSlackWebhook() {
+    if (!slackWebhookUrl.trim()) return
+    setSavingSlack(true)
+    try {
+      await api.put('/api/settings', { slack_webhook_url: slackWebhookUrl.trim() })
+      setSettings(s => ({ ...s, has_slack_webhook: true }))
+      setSlackWebhookUrl('')
+      toast.success('Webhook Slack enregistré')
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur')
+    } finally {
+      setSavingSlack(false)
+    }
+  }
+
+  async function removeSlackWebhook() {
+    setSavingSlack(true)
+    try {
+      await api.put('/api/settings', { slack_webhook_url: '' })
+      setSettings(s => ({ ...s, has_slack_webhook: false }))
+      toast.success('Webhook Slack retiré')
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur')
+    } finally {
+      setSavingSlack(false)
     }
   }
 
@@ -346,6 +377,46 @@ export default function SettingsPage() {
                 {savingAiQuota ? 'Enregistrement…' : 'Sauvegarder'}
               </Button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Notifications Slack ──────────────────────────────────── */}
+      <div className={sectionClass}>
+        <div className="flex items-start gap-3">
+          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-sm font-semibold">Notifications Slack</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Notifie sur un canal Slack à chaque vente, abandon de panier ou paiement échoué (tous clients).
+            </p>
+            {settings.has_slack_webhook ? (
+              <div className="flex items-center gap-2 mt-3">
+                <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  Webhook configuré
+                </span>
+                <Button onClick={removeSlackWebhook} disabled={savingSlack} variant="ghost" size="sm" className="text-xs text-muted-foreground">
+                  {savingSlack ? 'Retrait…' : 'Retirer'}
+                </Button>
+              </div>
+            ) : (
+              <div className="flex gap-2 mt-3">
+                <Input
+                  placeholder="https://hooks.slack.com/services/..."
+                  value={slackWebhookUrl}
+                  onChange={e => setSlackWebhookUrl(e.target.value)}
+                  className="flex-1"
+                />
+                <Button onClick={saveSlackWebhook} disabled={savingSlack || !slackWebhookUrl.trim()} variant="outline" className="flex-shrink-0">
+                  {savingSlack ? 'Enregistrement…' : 'Sauvegarder'}
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       </div>
