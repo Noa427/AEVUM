@@ -216,7 +216,7 @@ Vitrine (.env) :
 | 026 | client_configs.formation_key (généré) + UNIQUE (client_id, config_type, formation_key) | Appliquée |
 | 027 | valid_config_type alignée sur ALLOWED_CONFIG_TYPES (27 types manquants depuis 006) + rejoue 026 (jamais appliquée) | Appliquée manuellement le 2026-06-14 via SQL Editor (hors tracking migrations) |
 | 028 | +ai_quota_eur_month (NULL = défaut global) sur clients | Appliquée manuellement le 2026-06-14 via SQL Editor (hors tracking migrations) |
-| 029 | valid_config_type + delay_onboarding_j3/j7, delay_failed_payment_j3/j7 | À appliquer |
+| 029 | valid_config_type + delay_onboarding_j3/j7, delay_failed_payment_j3/j7 | Appliquée manuellement le 2026-06-14 via SQL Editor (hors tracking migrations) |
 
 ## MODÈLE D'ABONNEMENT
 

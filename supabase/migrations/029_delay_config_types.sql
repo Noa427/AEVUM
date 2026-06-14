@@ -1,3 +1,7 @@
+-- NOTE 2026-06-14 : appliquée manuellement sur la base distante via le SQL Editor
+-- Supabase (hors tracking supabase/migrations) — ne pas la rejouer en pensant
+-- qu'elle est manquante.
+--
 -- Délais J3/J7 configurables par client (onboarding + relance impayé)
 -- Stockés dans client_configs (valeur = nombre de jours en string), vide = défaut (3 / 7)
 
