@@ -236,7 +236,6 @@ Stockage : `clients.plan` (standard/premium) + `clients.payment_status` (active/
 - Multi-tenant admin : plusieurs admins, isolation par user_id
 - Notifications push/Slack sur nouveau webhook reçu
 - Interface de configuration des délais J3/J7 par client
-- Front : exploiter option_checkout/option_vocal/option_notaire renvoyés par /client/me (UI conditionnelle portail) + UI admin pour PUT /api/clients/:id/plan
 
 ## À FAIRE (dette technique signalée)
 
