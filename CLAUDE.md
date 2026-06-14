@@ -225,7 +225,7 @@ Vitrine (.env) :
 | 027 | valid_config_type alignée sur ALLOWED_CONFIG_TYPES (27 types manquants depuis 006) + rejoue 026 (jamais appliquée) | Appliquée manuellement le 2026-06-14 via SQL Editor (hors tracking migrations) |
 | 028 | +ai_quota_eur_month (NULL = défaut global) sur clients | Appliquée manuellement le 2026-06-14 via SQL Editor (hors tracking migrations) |
 | 029 | valid_config_type + delay_onboarding_j3/j7, delay_failed_payment_j3/j7 | Appliquée manuellement le 2026-06-14 via SQL Editor (hors tracking migrations) |
-| 030 | Table business_reports (rapports IA hebdo, RLS activé) | À appliquer |
+| 030 | Table business_reports (rapports IA hebdo, RLS activé) | Appliquée manuellement le 2026-06-14 via SQL Editor (hors tracking migrations) |
 
 ## MODÈLE D'ABONNEMENT
 

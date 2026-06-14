@@ -1,3 +1,7 @@
+-- NOTE 2026-06-14 : appliquée manuellement sur la base distante via le SQL Editor
+-- Supabase (hors tracking supabase/migrations) — ne pas la rejouer en pensant
+-- qu'elle est manquante.
+--
 -- Rapports IA hebdomadaires business AEVUM (MRR, churn, anomalies)
 CREATE TABLE business_reports (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
