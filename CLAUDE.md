@@ -241,7 +241,7 @@ Stockage : `clients.plan` (standard/premium) + `clients.payment_status` (active/
 
 ## PROCHAINE FEATURE À CODER
 
-- Intégration Stripe côté admin pour paiement automatique clients
+- Intégration Stripe côté admin pour paiement automatique clients — reportée 2026-06-14, scope à définir (facturation récurrente vs lien de paiement) quand le besoin sera clair
 - Multi-tenant admin : plusieurs admins, isolation par user_id
 
 ## À FAIRE (dette technique signalée)
