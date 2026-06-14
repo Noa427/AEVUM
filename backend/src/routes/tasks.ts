@@ -11,6 +11,7 @@ export const tasksRouter = Router()
 tasksRouter.use(requireAuth)
 
 tasksRouter.get('/', async (req, res) => {
+  const userId = (req as any).userId
   const { status = 'pending', client_id, page = '1', limit = '20' } = req.query
   const pageNum = Math.max(1, parseInt(page as string) || 1)
   const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20))
@@ -18,7 +19,8 @@ tasksRouter.get('/', async (req, res) => {
 
   let query = supabase
     .from('pending_tasks')
-    .select('*, clients(name, email)', { count: 'exact' })
+    .select('*, clients!inner(name, email)', { count: 'exact' })
+    .eq('clients.user_id', userId)
     .order('created_at', { ascending: false })
     .range(from, from + limitNum - 1)
 
@@ -31,6 +33,7 @@ tasksRouter.get('/', async (req, res) => {
 })
 
 tasksRouter.post('/:id/preview', async (req, res) => {
+  const userId = (req as any).userId
   const { data: task } = await supabase
     .from('pending_tasks')
     .select('*')
@@ -42,8 +45,10 @@ tasksRouter.post('/:id/preview', async (req, res) => {
     .from('clients')
     .select('auto_mode')
     .eq('id', task.client_id)
+    .eq('user_id', userId)
     .single()
-  const isAuto = client?.auto_mode ?? true
+  if (!client) return res.status(404).json({ error: 'Tâche introuvable' })
+  const isAuto = client.auto_mode ?? true
 
   try {
     let aiResponse: string
@@ -63,13 +68,15 @@ tasksRouter.post('/:id/preview', async (req, res) => {
 })
 
 tasksRouter.post('/:id/send', async (req, res) => {
+  const userId = (req as any).userId
   const { subject, body_html, ai_response } = req.body
   if (!subject || !body_html) return res.status(400).json({ error: 'subject et body_html requis' })
 
   const { data: task } = await supabase
     .from('pending_tasks')
-    .select('*, clients(name, email)')
+    .select('*, clients!inner(name, email)')
     .eq('id', req.params.id)
+    .eq('clients.user_id', userId)
     .single()
   if (!task) return res.status(404).json({ error: 'Tâche introuvable' })
 

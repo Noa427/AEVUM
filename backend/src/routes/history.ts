@@ -6,6 +6,7 @@ export const historyRouter = Router()
 historyRouter.use(requireAuth)
 
 historyRouter.get('/', async (req, res) => {
+  const userId = (req as any).userId
   const { status, client_id, page = '1', limit = '20', date_from, date_to } = req.query
   const pageNum = Math.max(1, parseInt(page as string) || 1)
   const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20))
@@ -13,7 +14,8 @@ historyRouter.get('/', async (req, res) => {
 
   let query = supabase
     .from('activity_logs')
-    .select('*, clients(name)', { count: 'exact' })
+    .select('*, clients!inner(name)', { count: 'exact' })
+    .eq('clients.user_id', userId)
     .order('created_at', { ascending: false })
     .range(from, from + limitNum - 1)
 

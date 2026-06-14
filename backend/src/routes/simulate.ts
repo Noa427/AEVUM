@@ -8,11 +8,20 @@ export const simulateRouter = Router()
 simulateRouter.use(requireAuth)
 
 simulateRouter.post('/', async (req, res) => {
+  const userId = (req as any).userId
   const { client_id, event_type = 'failed_payment', custom_data } = req.body
   if (!client_id) return res.status(400).json({ error: 'client_id requis' })
   if (!['failed_payment', 'checkout_completed'].includes(event_type)) {
     return res.status(400).json({ error: 'event_type invalide (failed_payment | checkout_completed)' })
   }
+
+  const { data: client } = await supabase
+    .from('clients')
+    .select('id')
+    .eq('id', client_id)
+    .eq('user_id', userId)
+    .single()
+  if (!client) return res.status(404).json({ error: 'Client introuvable' })
 
   const { data: configs } = await supabase
     .from('client_configs')

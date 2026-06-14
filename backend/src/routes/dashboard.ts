@@ -14,17 +14,16 @@ const PREMIUM_FEATURE_CONFIGS: Record<string, string> = {
   f19: 'template_coaching_j14',
 }
 
-dashboardRouter.get('/', async (_req, res) => {
+dashboardRouter.get('/', async (req, res) => {
+  const userId = (req as any).userId
   const startOfMonth = new Date()
   startOfMonth.setDate(1)
   startOfMonth.setHours(0, 0, 0, 0)
   const som = startOfMonth.toISOString()
 
-  const [clientsRes, pendingRes, infraRes, aiRes] = await Promise.all([
-    supabase.from('clients').select('id, name, plan, payment_status, whatsapp_active'),
-    supabase.from('pending_tasks').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+  const [clientsRes, infraRes] = await Promise.all([
+    supabase.from('clients').select('id, name, plan, payment_status, whatsapp_active').eq('user_id', userId),
     supabase.from('settings').select('value').eq('key', 'infra_monthly_cost').maybeSingle(),
-    supabase.from('ai_usage_logs').select('client_id, cost_usd').gte('created_at', som),
   ])
 
   const clients = (clientsRes.data ?? []).filter(c => !EXCLUDED_FROM_STATS_CLIENT_IDS.has(c.id))
@@ -32,7 +31,13 @@ dashboardRouter.get('/', async (_req, res) => {
   const infraEur = parseFloat(infraRes.data?.value ?? '0') || 0
   const infraPerClient = clients.length > 0 ? infraEur / clients.length : 0
 
-  const [addonRes, featureRes, emailRes] = await Promise.all([
+  const [pendingRes, aiRes, addonRes, featureRes, emailRes] = await Promise.all([
+    clientIds.length
+      ? supabase.from('pending_tasks').select('id', { count: 'exact', head: true }).eq('status', 'pending').in('client_id', clientIds)
+      : { count: 0 },
+    clientIds.length
+      ? supabase.from('ai_usage_logs').select('client_id, cost_usd').in('client_id', clientIds).gte('created_at', som)
+      : { data: [] },
     clientIds.length
       ? supabase.from('client_configs').select('client_id, config_type, encrypted_value')
           .in('client_id', clientIds).in('config_type', [...ADDON_TYPES])

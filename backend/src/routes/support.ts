@@ -20,6 +20,7 @@ supportRouter.use(requireAuth)
 const VALID_CATEGORIES: SupportCategory[] = ['accès_formation', 'remboursement', 'technique', 'autre']
 
 supportRouter.post('/inbound', async (req, res) => {
+  const userId = (req as any).userId
   const { from, subject, body, client_id } = req.body
   if (!from || !subject || !body || !client_id) {
     return res.status(400).json({ error: 'Champs requis : from, subject, body, client_id' })
@@ -32,6 +33,7 @@ supportRouter.post('/inbound', async (req, res) => {
     .from('clients')
     .select('id, email, name, auto_mode')
     .eq('id', client_id)
+    .eq('user_id', userId)
     .single()
   if (!client) return res.status(404).json({ error: 'Client introuvable' })
 

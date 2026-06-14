@@ -15,10 +15,12 @@ const ADDON_CONFIG_TYPES = ['addon_f11', 'addon_f13', 'addon_f18'] as const
 export const clientsRouter = Router()
 clientsRouter.use(requireAuth)
 
-clientsRouter.get('/', async (_req, res) => {
+clientsRouter.get('/', async (req, res) => {
+  const userId = (req as any).userId
   const { data, error } = await supabase
     .from('clients')
     .select('id, user_id, name, email, plan, payment_status, created_at')
+    .eq('user_id', userId)
     .order('created_at', { ascending: false })
   if (error) return res.status(500).json({ error: error.message })
 
@@ -73,10 +75,12 @@ clientsRouter.get('/', async (_req, res) => {
 
 clientsRouter.get('/:id', async (req, res) => {
   if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID invalide' })
+  const userId = (req as any).userId
   const { data, error } = await supabase
     .from('clients')
     .select('id, user_id, name, email, auto_mode, paused_until, whatsapp_phone_number_id, whatsapp_active, must_change_password, plan, payment_status, ai_quota_eur_month, created_at')
     .eq('id', req.params.id)
+    .eq('user_id', userId)
     .single()
   if (error || !data) return res.status(404).json({ error: 'Client introuvable' })
 
@@ -295,10 +299,12 @@ const PILIER_CONFIG_TYPES = [
 
 clientsRouter.get('/:id/configs', async (req, res) => {
   if (!UUID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID invalide' })
+  const userId = (req as any).userId
   const { data: client } = await supabase
     .from('clients')
     .select('id')
     .eq('id', req.params.id)
+    .eq('user_id', userId)
     .single()
   if (!client) return res.status(404).json({ error: 'Client introuvable' })
 
