@@ -353,7 +353,7 @@ clientAuthRouter.get('/automations', authenticateClient, async (req, res) => {
 
   res.json({
     onboarding: types.has('template_onboarding_j0'),
-    recouvrement: types.has('stripe_webhook_secret'),
+    recouvrement: types.has('template_failed_payment_j1'),
     support: types.has('support_email_enabled'),
     upsell: types.has('upsell_enabled'),
     senderName,

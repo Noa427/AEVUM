@@ -1082,7 +1082,8 @@ export async function runStudentCoaching(): Promise<void> {
 
 export async function sendVideoReport(): Promise<void> {
   const now = new Date()
-  if (now.getUTCDay() !== 1 || now.getUTCHours() !== 8) return
+  // Décalé à 9h pour éviter de cumuler avec sendWeeklyReport (lundi 08h UTC)
+  if (now.getUTCDay() !== 1 || now.getUTCHours() !== 9) return
 
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
