@@ -20,6 +20,12 @@ interface Client {
   created_at: string
   auto_mode: boolean
   plan: 'standard' | 'premium'
+  payment_status: 'active' | 'unpaid'
+  mrr: number
+  student_count: number
+  emails_sent_total: number
+  ai_cost_eur_month: number
+  last_activity: string | null
 }
 
 interface Task {
@@ -290,6 +296,14 @@ export default function ClientDetailPage() {
             {copiedHeader ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
             {copiedHeader ? 'Copié ✓' : 'Copier URL webhook'}
           </Button>
+          <Button variant="outline" size="sm" asChild className="text-xs gap-1.5">
+            <a href={`mailto:${client.email}`}>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+              </svg>
+              Contacter
+            </a>
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setShowEdit(true)} className="text-xs gap-1.5">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
@@ -328,6 +342,36 @@ export default function ClientDetailPage() {
             Client depuis le {new Date(client.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}
             {' · '}Mode {client.auto_mode ? 'automatique' : 'manuel'}
           </p>
+        </div>
+      </div>
+
+      {/* Stats condensées */}
+      <div className="card-elevated p-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div>
+          <p className="text-xs text-muted-foreground">Paiement</p>
+          <p className={`text-sm font-semibold mt-0.5 ${client.payment_status === 'active' ? 'text-emerald-400' : 'text-red-400'}`}>
+            {client.payment_status === 'active' ? '✓ Actif' : '✗ Impayé'}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Élèves</p>
+          <p className="text-sm font-semibold mt-0.5">{client.student_count}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Emails envoyés</p>
+          <p className="text-sm font-semibold mt-0.5">{client.emails_sent_total}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Revenu (MRR)</p>
+          <p className="text-sm font-semibold mt-0.5">{client.mrr.toLocaleString('fr-FR')}€</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Coût IA (mois)</p>
+          <p className="text-sm font-semibold mt-0.5">{client.ai_cost_eur_month.toLocaleString('fr-FR')}€</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Dernière activité</p>
+          <p className="text-sm font-semibold mt-0.5">{client.last_activity ? relativeTime(client.last_activity) : '—'}</p>
         </div>
       </div>
 

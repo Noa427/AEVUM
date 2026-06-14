@@ -6,6 +6,7 @@ import { validate } from '../middleware/validate'
 import { ClientUpdateSchema } from '../schemas/client'
 import { generateClientCredentials } from '../utils/generateClientCredentials'
 import { OPTION_ADDON_MAP, OptionKey } from '../middleware/planGate'
+import { USD_TO_EUR, planMrr } from '../utils/pricing'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const ADDON_CONFIG_TYPES = ['addon_f11', 'addon_f13', 'addon_f18'] as const
@@ -27,7 +28,7 @@ clientsRouter.get('/', async (_req, res) => {
 
   const [taskRows, logRows, addonRows] = await Promise.all([
     clientIds.length
-      ? supabase.from('pending_tasks').select('client_id').in('client_id', clientIds).eq('status', 'pending')
+      ? supabase.from('pending_tasks').select('client_id, status').in('client_id', clientIds).in('status', ['pending', 'failed'])
       : { data: [] },
     clientIds.length
       ? supabase.from('activity_logs').select('client_id').in('client_id', clientIds).eq('status', 'sent').gte('created_at', startOfMonth.toISOString())
@@ -40,7 +41,11 @@ clientsRouter.get('/', async (_req, res) => {
   ])
 
   const taskCounts: Record<string, number> = {}
-  for (const t of (taskRows as any).data ?? []) taskCounts[t.client_id] = (taskCounts[t.client_id] ?? 0) + 1
+  const failedTaskClients = new Set<string>()
+  for (const t of (taskRows as any).data ?? []) {
+    if (t.status === 'pending') taskCounts[t.client_id] = (taskCounts[t.client_id] ?? 0) + 1
+    if (t.status === 'failed') failedTaskClients.add(t.client_id)
+  }
 
   const logCounts: Record<string, number> = {}
   for (const l of (logRows as any).data ?? []) logCounts[l.client_id] = (logCounts[l.client_id] ?? 0) + 1
@@ -60,6 +65,7 @@ clientsRouter.get('/', async (_req, res) => {
     pending_tasks: taskCounts[c.id] ?? 0,
     emails_sent: logCounts[c.id] ?? 0,
     addons: addonsMap[c.id] ?? [],
+    has_issue: c.payment_status === 'unpaid' || failedTaskClients.has(c.id),
   })))
 })
 
@@ -71,7 +77,34 @@ clientsRouter.get('/:id', async (req, res) => {
     .eq('id', req.params.id)
     .single()
   if (error || !data) return res.status(404).json({ error: 'Client introuvable' })
-  res.json(data)
+
+  const startOfMonth = new Date()
+  startOfMonth.setDate(1)
+  startOfMonth.setHours(0, 0, 0, 0)
+
+  const [studentRes, emailsRes, lastActivityRes, aiRes, addonRes] = await Promise.all([
+    supabase.from('student_profiles').select('email', { count: 'exact', head: true }).eq('client_id', data.id),
+    supabase.from('activity_logs').select('id', { count: 'exact', head: true }).eq('client_id', data.id).eq('status', 'sent'),
+    supabase.from('activity_logs').select('created_at').eq('client_id', data.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('ai_usage_logs').select('cost_usd').eq('client_id', data.id).gte('created_at', startOfMonth.toISOString()),
+    supabase.from('client_configs').select('config_type, encrypted_value').eq('client_id', data.id).in('config_type', [...ADDON_CONFIG_TYPES]),
+  ])
+
+  const addons = new Set<string>()
+  for (const r of addonRes.data ?? []) {
+    try { if (decrypt(r.encrypted_value) === 'true') addons.add(r.config_type) } catch {}
+  }
+  const aiCostUsd = (aiRes.data ?? []).reduce((sum, r) => sum + r.cost_usd, 0)
+
+  res.json({
+    ...data,
+    addons: [...addons],
+    mrr: planMrr(data.plan, addons),
+    student_count: studentRes.count ?? 0,
+    emails_sent_total: emailsRes.count ?? 0,
+    ai_cost_eur_month: Math.round(aiCostUsd * USD_TO_EUR * 100) / 100,
+    last_activity: lastActivityRes.data?.created_at ?? null,
+  })
 })
 
 clientsRouter.post('/', async (req, res) => {

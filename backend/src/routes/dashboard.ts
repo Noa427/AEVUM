@@ -2,17 +2,11 @@ import { Router } from 'express'
 import { supabase } from '../services/supabase'
 import { requireAuth } from '../middleware/auth'
 import { decrypt } from '../services/encryption'
+import { PRICE, USD_TO_EUR, ADDON_TYPES, planMrr, EXCLUDED_FROM_STATS_CLIENT_IDS } from '../utils/pricing'
 
 export const dashboardRouter = Router()
 dashboardRouter.use(requireAuth)
 
-const USD_TO_EUR = 0.92
-const PRICE: Record<string, number> = {
-  standard: 690, premium: 1290,
-  addon_f11: 200, addon_f13: 350, addon_f18: 149,
-  email: 0.001,
-}
-const ADDON_TYPES = ['addon_f11', 'addon_f13', 'addon_f18'] as const
 const PREMIUM_FEATURE_CONFIGS: Record<string, string> = {
   f14: 'template_predunning',
   f15: 'template_churn_reengagement',
@@ -33,7 +27,7 @@ dashboardRouter.get('/', async (_req, res) => {
     supabase.from('ai_usage_logs').select('client_id, cost_usd').gte('created_at', som),
   ])
 
-  const clients = clientsRes.data ?? []
+  const clients = (clientsRes.data ?? []).filter(c => !EXCLUDED_FROM_STATS_CLIENT_IDS.has(c.id))
   const clientIds = clients.map(c => c.id)
   const infraEur = parseFloat(infraRes.data?.value ?? '0') || 0
   const infraPerClient = clients.length > 0 ? infraEur / clients.length : 0
@@ -92,12 +86,7 @@ dashboardRouter.get('/', async (_req, res) => {
   const totalAiUsd = Object.values(aiCostUsdPerClient).reduce((a, b) => a + b, 0) + aiNullCostUsd
 
   function clientMrr(c: { id: string; plan: string }): number {
-    const base = c.plan === 'premium' ? PRICE.premium : PRICE.standard
-    const addons = addonMap[c.id] ?? new Set()
-    return base
-      + (addons.has('addon_f11') ? PRICE.addon_f11 : 0)
-      + (addons.has('addon_f13') ? PRICE.addon_f13 : 0)
-      + (addons.has('addon_f18') ? PRICE.addon_f18 : 0)
+    return planMrr(c.plan, addonMap[c.id] ?? new Set())
   }
 
   // MRR breakdown

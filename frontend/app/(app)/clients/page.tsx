@@ -16,6 +16,7 @@ interface ClientRow {
   plan: 'standard' | 'premium'
   payment_status: 'active' | 'unpaid'
   addons: string[]
+  has_issue: boolean
 }
 
 const MRR = { standard: 690, premium: 1290, addon_f11: 200, addon_f13: 350, addon_f18: 149 }
@@ -269,8 +270,14 @@ export default function ClientsPage() {
                       {/* Client */}
                       <td className="px-4 py-3">
                         <Link href={`/clients/${client.id}`} className="flex items-center gap-3 min-w-0">
-                          <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
+                          <div className="relative w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
                             <span className="text-xs font-semibold text-primary">{initials}</span>
+                            {client.has_issue && (
+                              <span
+                                title={client.payment_status === 'unpaid' ? 'Paiement impayé' : 'Tâche en échec à traiter'}
+                                className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-red-500 border-2 border-card"
+                              />
+                            )}
                           </div>
                           <div className="min-w-0">
                             <p className="font-medium truncate hover:text-primary transition-colors">{client.name}</p>
