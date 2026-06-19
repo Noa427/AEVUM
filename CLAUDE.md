@@ -54,6 +54,7 @@
 - Quota IA mensuel 2026-06-14 : migration 028 (clients.ai_quota_eur_month, NULL = défaut global settings.ai_quota_eur_month_default, 5€ par défaut) ; middleware aiQuotaGate (utils/pricing EXCLUDED_FROM_STATS_CLIENT_IDS exempté) posé sur POST /client/ai/generate et /ai/improve → 429 AI_QUOTA_EXCEEDED si usage du mois (ai_usage_logs) ≥ quota ; réglage global via GET/PUT /api/settings (ai_quota_eur_month_default), override par client via GET/PUT /api/clients/:id (ai_quota_eur_month, ai_quota_eur_month_effective) + UI fiche client (onglet Paramètres)
 - Délais J3/J7 configurables par client 2026-06-14 : migration 029 (4 nouveaux config_types : delay_onboarding_j3/j7, delay_failed_payment_j3/j7, valeur = nombre de jours en string, vide = défaut 3/7) ; webhooks.ts calcule j3At/j7At via getDelayDays(configMap, ...) avec fallback DEFAULT_DELAYS (schemas/client.ts) pour handleCheckoutCompleted (onboarding) et handleFailedPayment (relance impayé) ; admin GET/PUT /api/clients/:id/configs accepte ces 4 types (validation 1-90 jours) + UI fiche client (onglet Paramètres, carte "Délais de relance")
 - Notifications Slack 2026-06-14 : settings.slack_webhook_url (encrypted, géré via GET/PUT /api/settings → has_slack_webhook), services/slack.ts envoie une notif (best-effort) sur checkout.session.completed (✅ vente), checkout.session.expired (🛒 abandon), payment_intent/invoice.payment_failed (⚠️ échec paiement) — tous clients confondus, déclenché depuis webhooks.ts (notifySlack) ; UI Settings (carte "Notifications Slack")
+- Coaching J+14 généré par IA 2026-06-19 : cron.ts (runStudentCoaching) appelle callClaude par étudiant inactif (buildPromptCoachingJ14 dans templates.ts) au lieu d'injecter des variables dans le subject/body statique de template_coaching_j14 (qui ne sert plus que de flag actif/inactif) ; prompt varie volontairement la formulation par élève (prénom, formation, jours d'inactivité, ton/objectif) ; coût loggé automatiquement dans ai_usage_logs (callClaude existant) ; migration 032 (coaching_ia_ton/coaching_ia_objectif, défauts "empathique"/"encourager à reprendre la formation") appliquée manuellement le 2026-06-19 via SQL Editor — pas encore de champs dans le portail pour les éditer (modifiables via PUT /client/configs uniquement). Sur `feat/coaching-ia-dynamique` (2900cdf)
 
 ## STRUCTURE DES FICHIERS
 
@@ -100,7 +101,7 @@ backend/src/
     sendMultiChannel.ts     — sendEmailWithChannels() — dispatch email + WhatsApp/SMS selon canaux actifs du client
     businessMetrics.ts      — getBusinessSnapshot(userId) : MRR/coûts/profit/churn scopés user_id (pour rapports IA)
   schemas/
-    client.ts               — schémas Zod + ALLOWED_CONFIG_TYPES (27 types : 23 piliers/templates + addon_f11/f13/f18 + vocal_ia_active)
+    client.ts               — schémas Zod + ALLOWED_CONFIG_TYPES (33 types : piliers/templates + addon_f11/f13/f18 + vocal_ia_active + delay_* + coaching_ia_ton/objectif)
 
 frontend/
   app/
@@ -227,6 +228,7 @@ Vitrine (.env) :
 | 029 | valid_config_type + delay_onboarding_j3/j7, delay_failed_payment_j3/j7 | Appliquée manuellement le 2026-06-14 via SQL Editor (hors tracking migrations) |
 | 030 | Table business_reports (rapports IA hebdo, RLS activé) | Appliquée manuellement le 2026-06-14 via SQL Editor (hors tracking migrations) |
 | 031 | RLS activé sur client_configs + settings (oubliées depuis 001, trouvé lors de l'audit sécurité 2026-06-17) | Appliquée manuellement le 2026-06-17 via SQL Editor (hors tracking migrations) |
+| 032 | valid_config_type + coaching_ia_ton, coaching_ia_objectif | Appliquée manuellement le 2026-06-19 via SQL Editor (hors tracking migrations) |
 
 ## MODÈLE D'ABONNEMENT
 
