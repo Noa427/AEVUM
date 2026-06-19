@@ -23,6 +23,8 @@ export const ALLOWED_CONFIG_TYPES = [
   'template_predunning',
   'template_churn_reengagement',
   'template_coaching_j14',
+  'coaching_ia_ton',
+  'coaching_ia_objectif',
   'rapport_video_active',
   'addon_f11',
   'addon_f13',

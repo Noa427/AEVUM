@@ -1,5 +1,5 @@
 import { supabase } from './services/supabase'
-import { getTemplate, TaskType, buildPromptUpsell, parseClaudeResponse, wrapEmailHtml } from './services/templates'
+import { getTemplate, TaskType, buildPromptUpsell, buildPromptCoachingJ14, parseClaudeResponse, wrapEmailHtml } from './services/templates'
 import { callClaude } from './services/claude'
 import { sendEmail } from './services/resend'
 import { decrypt } from './services/encryption'
@@ -1007,12 +1007,18 @@ export async function runStudentCoaching(): Promise<void> {
       candidates.push({ email, ctx: t.context_json as Record<string, any> })
     }
 
-    const { data: senderRow } = await supabase
-      .from('client_configs').select('encrypted_value')
-      .eq('client_id', clientId).eq('config_type', 'sender_name').single()
-    const senderName = senderRow?.encrypted_value
-      ? (() => { try { return decrypt(senderRow.encrypted_value) } catch { return 'Formateur' } })()
-      : 'Formateur'
+    const { data: clientCfgRows } = await supabase
+      .from('client_configs')
+      .select('config_type, encrypted_value')
+      .eq('client_id', clientId)
+      .in('config_type', ['sender_name', 'coaching_ia_ton', 'coaching_ia_objectif'])
+    const clientCfgMap: Record<string, string> = {}
+    for (const row of clientCfgRows ?? []) {
+      try { clientCfgMap[row.config_type] = decrypt(row.encrypted_value) } catch { /* skip malformed */ }
+    }
+    const senderName = clientCfgMap['sender_name'] || 'Formateur'
+    const coachingTon = clientCfgMap['coaching_ia_ton'] || 'empathique'
+    const coachingObjectif = clientCfgMap['coaching_ia_objectif'] || 'encourager à reprendre la formation'
 
     for (const { email, ctx } of candidates) {
       // Blacklist check
@@ -1060,18 +1066,22 @@ export async function runStudentCoaching(): Promise<void> {
         .gte('sent_at', since14)
       if (alreadySent && alreadySent > 0) continue
 
-      const vars: Record<string, string> = {
-        nom: ctx.customer_name ?? ctx.student_name ?? '',
-        prenom: ctx.student_name ?? '',
-        nom_formation: ctx.product_name ?? '',
-        lien_acces: ctx.hosted_invoice_url ?? '',
-      }
-      const injectV = (text: string) => text.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`)
+      const joursInactivite = profileRow?.last_lms_activity
+        ? Math.max(1, Math.floor((now.getTime() - new Date(profileRow.last_lms_activity).getTime()) / (24 * 60 * 60 * 1000)))
+        : 14
 
       try {
-        const subject = injectV(config.subject ?? 'Comment avancez-vous dans votre formation ?')
-        const body = injectV(config.body ?? '')
-        const html = wrapEmailHtml(body.replace(/\n/g, '<br>'), senderName)
+        const prompt = buildPromptCoachingJ14({
+          sender_name: senderName,
+          student_name: ctx.student_name ?? ctx.customer_name ?? '',
+          product_name: ctx.product_name ?? '',
+          jours_inactivite: joursInactivite,
+          ton: coachingTon,
+          objectif: coachingObjectif,
+        })
+        const aiResponse = await callClaude(prompt, 'claude-sonnet-4-6', clientId)
+        const { subject, body_html } = parseClaudeResponse(aiResponse)
+        const html = wrapEmailHtml(body_html, senderName)
         const token = await insertTrackingRow({ clientId, studentEmail: email, configType: 'template_coaching_j14', channel: 'email' })
         await sendEmail({
           to: email,

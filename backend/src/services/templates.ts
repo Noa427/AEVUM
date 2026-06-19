@@ -121,6 +121,28 @@ function buildPromptOnboardingJ7(ctx: Record<string, any>): string {
   ].filter(Boolean).join('\n')
 }
 
+export function buildPromptCoachingJ14(ctx: Record<string, any>): string {
+  return [
+    'Tu es un coach pédagogique chaleureux pour formateurs en ligne.',
+    `Rédige un email pour relancer un élève inactif depuis ${ctx.jours_inactivite} jours.`,
+    '',
+    `Formateur : ${ctx.sender_name ?? 'Formateur'}`,
+    ctx.student_name ? `Prénom élève : ${ctx.student_name}` : '',
+    ctx.product_name ? `Formation : ${ctx.product_name}` : '',
+    `Objectif de l'email : ${ctx.objectif}`,
+    '',
+    'Contenu attendu : un message personnel et naturel, jamais un email type ou robotique. Varie la formulation, l\'angle d\'approche et la structure à chaque envoi, comme si tu écrivais spontanément à cette personne précise — ne réutilise jamais les mêmes phrases d\'un élève à l\'autre.',
+    '',
+    'Format de ta réponse (OBLIGATOIRE) :',
+    '[SUBJECT]Objet de l\'email[/SUBJECT]',
+    '',
+    '<p>...</p>',
+    '',
+    `Ton ${ctx.ton}, court (max 120 mots), 2 paragraphes max.`,
+    'HTML simple uniquement : <p>, <strong>, <a> autorisés.',
+  ].filter(Boolean).join('\n')
+}
+
 export function buildPromptSupportClassify(ctx: { from: string; subject: string; body: string }): string {
   return [
     'Classifie cet email entrant en une seule catégorie parmi : accès_formation, remboursement, technique, autre.',
