@@ -1,5 +1,34 @@
 # AEVUM
 
+**SaaS d'automatisation des relances impayés et de l'onboarding pour formateurs en ligne, piloté par IA.**
+
+![Node.js](https://img.shields.io/badge/Node.js-18+-339933?logo=node.js&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![Express](https://img.shields.io/badge/Express-4-000000?logo=express&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-14-000000?logo=nextdotjs&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase&logoColor=white)
+![Stripe](https://img.shields.io/badge/Stripe-Webhooks-635BFF?logo=stripe&logoColor=white)
+![Resend](https://img.shields.io/badge/Resend-Email-000000?logo=resend&logoColor=white)
+![Claude AI](https://img.shields.io/badge/Claude-Anthropic-D97757?logo=anthropic&logoColor=white)
+
+**Démo en ligne** : _à venir_
+
+## Aperçu
+
+| Dashboard | Clients |
+|---|---|
+| ![Dashboard](docs/images/dashboard.png) | ![Clients](docs/images/clients.png) |
+| MRR, coûts et profit net en un coup d'œil | Liste clients avec filtres et tri |
+
+| Tâche IA (preview + envoi) |
+|---|
+| ![Tâches](docs/images/tasks.png) |
+| Prévisualisation et envoi d'un email généré par IA |
+
+---
+
+## Documentation technique
+
 Outil SaaS pour formateurs en ligne : automatise les emails de relance impayés et d'onboarding via Stripe webhooks + Claude AI + Resend.
 
 ## Stack
